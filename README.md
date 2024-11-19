@@ -25,6 +25,7 @@ switches:
 predictor:
   # predict db folder in user directory/shared directory
   # default to 'predict.userdb'
+  # be careful when there is a schema named `predict`, in which case you should reset value of this `predictdb` key to another name for better compcompliance.
   predictdb: predict.userdb
   # max prediction candidates every time
   # default to 0, which means showing all candidates
