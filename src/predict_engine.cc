@@ -136,7 +136,7 @@ bool PredictDb::Lookup(const string& query) {
   string value;
   leveldb::Status status = db_->Get(leveldb::ReadOptions(), query, &value);
   if (!status.ok()) {
-    LOG(ERROR) << "Error getting value: " << status.ToString();
+    // LOG(ERROR) << "Error getting value: " << status.ToString();
     return false;
   }
 
