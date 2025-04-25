@@ -23,6 +23,8 @@ Predictor::Predictor(const Ticket& ticket, an<PredictEngine> predict_engine)
       [this](Context* ctx) { OnSelect(ctx); });
   context_update_connection_ = context->update_notifier().connect(
       [this](Context* ctx) { OnContextUpdate(ctx); });
+  delete_connection_ = context->delete_notifier().connect(
+      [this](Context* ctx) { OnDelete(ctx); });
 }
 
 Predictor::~Predictor() {
@@ -44,17 +46,6 @@ ProcessResult Predictor::ProcessKeyEvent(const KeyEvent& key_event) {
       ctx->Clear();
       return kAccepted;
     }
-  } else if (keycode == RimeGetKeycodeByName("Delete") &&
-             key_event.modifier() == RimeGetModifierByName("Shift")) {
-    // Shift+Delete to delete highlighted prediction
-    auto* ctx = engine_->context();
-    if (ctx->commit_history().empty())
-      return kNoop;
-    auto last_commit = ctx->commit_history().back();
-    auto current_hilited = ctx->GetSelectedCandidate()->text();
-    predict_engine_->UpdatePredict(last_commit.text, current_hilited, true);
-    ctx->Clear();
-    return kAccepted;
   } else {
     last_action_ = kUnspecified;
   }
@@ -63,6 +54,17 @@ ProcessResult Predictor::ProcessKeyEvent(const KeyEvent& key_event) {
 
 void Predictor::OnSelect(Context* ctx) {
   last_action_ = kSelect;
+}
+
+void Predictor::OnDelete(Context* ctx) {
+  if (!predict_engine_ || !ctx || !ctx->get_option("prediction")) {
+    return;
+  }
+  auto last_commit = ctx->commit_history().back();
+  auto current_hilited = ctx->GetSelectedCandidate()->text();
+  predict_engine_->UpdatePredict(last_commit.text, current_hilited, true);
+  ctx->Clear();
+  ctx->update_notifier()(ctx);
 }
 
 void Predictor::OnContextUpdate(Context* ctx) {

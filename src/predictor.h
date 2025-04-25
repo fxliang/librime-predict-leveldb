@@ -19,6 +19,7 @@ class Predictor : public Processor {
  protected:
   void OnContextUpdate(Context* ctx);
   void OnSelect(Context* ctx);
+  void OnDelete(Context* ctx);
   void PredictAndUpdate(Context* ctx, const string& context_query);
 
  private:
@@ -30,6 +31,7 @@ class Predictor : public Processor {
   an<PredictEngine> predict_engine_;
   connection select_connection_;
   connection context_update_connection_;
+  connection delete_connection_;
 };
 
 class PredictorComponent : public Predictor::Component {
