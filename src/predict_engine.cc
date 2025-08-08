@@ -16,6 +16,35 @@ namespace rime {
 static const ResourceType kPredictDbPredictDbResourceType = {"level_predict_db",
                                                              "", ""};
 
+PredictDbManager& PredictDbManager::instance() {
+  static PredictDbManager instance;
+  return instance;
+}
+
+an<PredictDb> PredictDbManager::GetPredictDb(const path& file_path) {
+  std::lock_guard<std::mutex> lock(mutex_);
+  auto found = db_cache_.find(file_path.string());
+  if (found != db_cache_.end()) {
+    if (auto db = found->second.lock()) {
+      LOG(INFO) << "Using cached PredictDb for: " << file_path;
+      return db;
+    } else {
+      LOG(INFO) << "Cached PredictDb for " << file_path
+                << " has expired, creating a new one.";
+      db_cache_.erase(found);
+    }
+  }
+  LOG(INFO) << "Creating new PredictDb for: " << file_path;
+  an<PredictDb> new_db = std::make_shared<PredictDb>(file_path);
+  if (new_db->valid()) {
+    db_cache_[file_path.string()] = new_db;
+    return new_db;
+  } else {
+    LOG(ERROR) << "Failed to create PredictDb for: " << file_path;
+    return nullptr;
+  }
+}
+
 PredictEngine::PredictEngine(an<PredictDb> level_db,
                              int max_iterations,
                              int max_candidates)
@@ -93,7 +122,7 @@ PredictEngine* PredictEngineComponent::Create(const Ticket& ticket) {
   the<ResourceResolver> resolver(Service::instance().CreateResourceResolver(
       kPredictDbPredictDbResourceType));
   auto file_path = resolver->ResolvePath(level_db_name);
-  an<PredictDb> level_db = std::make_shared<PredictDb>(file_path);
+  an<PredictDb> level_db = PredictDbManager::instance().GetPredictDb(file_path);
 
   if (level_db->valid()) {
     return new PredictEngine(level_db, max_iterations, max_candidates);

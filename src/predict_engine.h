@@ -4,6 +4,7 @@
 #include <rime/component.h>
 #include <msgpack.hpp>
 #include <leveldb/db.h>
+#include <mutex>
 
 namespace rime {
 
@@ -11,6 +12,19 @@ struct Prediction {
   std::string word;
   double count;
   MSGPACK_DEFINE(word, count);
+};
+
+class PredictDbManager {
+ public:
+  static PredictDbManager& instance();
+  an<class PredictDb> GetPredictDb(const path& file_path);
+
+ private:
+  PredictDbManager() = default;
+  ~PredictDbManager() = default;
+  PredictDbManager(const PredictDbManager&) = delete;
+  std::mutex mutex_;
+  std::map<string, weak<class PredictDb>> db_cache_;
 };
 
 class Context;
@@ -34,6 +48,7 @@ class PredictDb {
  private:
   leveldb::DB* db_;
   vector<string> candidates_;
+  friend class PredictDbManager;
 };
 
 class PredictEngine : public Class<PredictEngine, const Ticket&> {
