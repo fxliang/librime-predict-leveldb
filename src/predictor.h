@@ -20,6 +20,7 @@ class Predictor : public Processor {
   void OnContextUpdate(Context* ctx);
   void OnSelect(Context* ctx);
   void OnDelete(Context* ctx);
+  void OnAbort(Context* ctx);
   void PredictAndUpdate(Context* ctx, const string& context_query);
 
  private:
@@ -32,6 +33,7 @@ class Predictor : public Processor {
   connection select_connection_;
   connection context_update_connection_;
   connection delete_connection_;
+  connection abort_connection_;
 };
 
 class PredictorComponent : public Predictor::Component {

@@ -25,6 +25,20 @@ Predictor::Predictor(const Ticket& ticket, an<PredictEngine> predict_engine)
       [this](Context* ctx) { OnContextUpdate(ctx); });
   delete_connection_ = context->delete_notifier().connect(
       [this](Context* ctx) { OnDelete(ctx); });
+  abort_connection_ = context->abort_notifier().connect(
+      [this](Context* ctx) { OnAbort(ctx); });
+}
+
+void Predictor::OnAbort(Context* ctx) {
+  if (!predict_engine_ || !ctx || !ctx->get_option("prediction")) {
+    return;
+  }
+  predict_engine_->Clear();
+  iteration_counter_ = 0;
+  self_updating_ = true;
+  ctx->Clear();
+  ctx->update_notifier()(ctx);
+  self_updating_ = false;
 }
 
 Predictor::~Predictor() {
