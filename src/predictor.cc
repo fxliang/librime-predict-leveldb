@@ -30,6 +30,7 @@ Predictor::Predictor(const Ticket& ticket, an<PredictEngine> predict_engine)
 Predictor::~Predictor() {
   select_connection_.disconnect();
   context_update_connection_.disconnect();
+  delete_connection_.disconnect();
 }
 
 ProcessResult Predictor::ProcessKeyEvent(const KeyEvent& key_event) {
@@ -60,8 +61,17 @@ void Predictor::OnDelete(Context* ctx) {
   if (!predict_engine_ || !ctx || !ctx->get_option("prediction")) {
     return;
   }
+  if (ctx->commit_history().empty()) {
+    predict_engine_->Clear();
+    iteration_counter_ = 0;
+    return;
+  }
   auto last_commit = ctx->commit_history().back();
-  auto current_hilited = ctx->GetSelectedCandidate()->text();
+  auto selected_candidate = ctx->GetSelectedCandidate();
+  if (!selected_candidate) {
+    return;
+  }
+  auto current_hilited = selected_candidate->text();
   predict_engine_->UpdatePredict(last_commit.text, current_hilited, true);
   ctx->Clear();
   ctx->update_notifier()(ctx);
@@ -100,7 +110,7 @@ void Predictor::OnContextUpdate(Context* ctx) {
       predict_engine_->Clear();
       iteration_counter_ = 0;
       auto* ctx = engine_->context();
-      if (!ctx->composition().empty() &&
+      if (ctx && !ctx->composition().empty() &&
           ctx->composition().back().HasTag("prediction")) {
         ctx->Clear();
       }
@@ -111,6 +121,8 @@ void Predictor::OnContextUpdate(Context* ctx) {
 }
 
 void Predictor::PredictAndUpdate(Context* ctx, const string& context_query) {
+  if (!ctx || !predict_engine_)
+    return;
   if (predict_engine_->Predict(ctx, context_query)) {
     predict_engine_->CreatePredictSegment(ctx);
     self_updating_ = true;
