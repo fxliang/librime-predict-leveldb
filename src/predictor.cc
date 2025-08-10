@@ -86,10 +86,7 @@ void Predictor::OnContextUpdate(Context* ctx) {
     return;
   }
   if (ctx->commit_history().size() >= 2) {
-    auto it = ctx->commit_history().end();
-    --it;
-    --it;
-    auto pre_last_commit = *it;
+    auto pre_last_commit = *std::prev(ctx->commit_history().end(), 2);
     predict_engine_->UpdatePredict(pre_last_commit.text, last_commit.text,
                                    false);
   }
