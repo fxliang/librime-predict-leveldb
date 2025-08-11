@@ -1,4 +1,4 @@
-# librime-predict
+# librime-predict-leveldb
 librime plugin. predict next word by commit history.
 
 a mod of `rime/librime-predict`
@@ -23,7 +23,7 @@ switches:
 * Config items for your predictor:
 ```yaml
 predictor:
-  # predict db folder in user directory/shared directory
+  # predict db folder in user directory
   # default to 'predict.userdb'
   # be careful when there is a schema named `predict`, in which case you should reset value of this `predictdb` key to another name for better compcompliance.
   predictdb: predict.userdb
