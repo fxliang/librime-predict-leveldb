@@ -25,8 +25,8 @@ Predictor::Predictor(const Ticket& ticket, an<PredictEngine> predict_engine)
       [this](Context* ctx) { OnContextUpdate(ctx); });
   delete_connection_ = context->delete_notifier().connect(
       [this](Context* ctx) { OnDelete(ctx); });
-  abort_connection_ =
-      context->abort_notifier().connect([this](Context* ctx) { OnAbort(ctx); });
+
+  ConnectAbortNotifier(context);
 }
 
 void Predictor::OnAbort(Context* ctx) {
