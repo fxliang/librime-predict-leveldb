@@ -13,7 +13,7 @@ template <typename T, typename = void>
 struct HasAbortNotifier : std::false_type {};
 
 template <typename T>
-struct HasAbortNotifier<T, std::void_t<decltype(T::abort_notifier)>>
+struct HasAbortNotifier<T, std::void_t<decltype(std::declval<T>().abort_notifier())>>
     : std::true_type {};
 
 class Predictor : public Processor {
@@ -33,6 +33,7 @@ class Predictor : public Processor {
   template <typename T = Context>
   void ConnectAbortNotifier(T* context) {
     if constexpr (HasAbortNotifier<T>::value) {
+      LOG(INFO) << __FUNCTION__ << " referenced when HasAbortNotifier";
       abort_connection_ = context->abort_notifier().connect(
           [this](Context* ctx) { OnAbort(ctx); });
     }

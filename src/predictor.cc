@@ -97,7 +97,6 @@ void Predictor::OnContextUpdate(Context* ctx) {
       last_action_ == kDelete) {
     return;
   }
-  LOG(INFO) << "Predictor::OnContextUpdate";
   if (ctx->commit_history().empty()) {
     PredictAndUpdate(ctx, "$");
     return;
