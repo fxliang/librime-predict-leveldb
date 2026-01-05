@@ -13,7 +13,9 @@ template <typename T, typename = void>
 struct HasAbortNotifier : std::false_type {};
 
 template <typename T>
-struct HasAbortNotifier<T, std::void_t<decltype(std::declval<T>().abort_notifier())>>
+struct HasAbortNotifier<
+    T,
+    std::void_t<decltype(std::declval<T>().abort_notifier())>>
     : std::true_type {};
 
 class Predictor : public Processor {
