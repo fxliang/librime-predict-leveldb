@@ -5,6 +5,7 @@
 #include "predictor.h"
 #include "predict_engine.h"
 #include "predict_translator.h"
+#include "predict_data_sync.h"
 
 using namespace rime;
 
@@ -14,6 +15,7 @@ static void rime_predict_initialize() {
   r.Register("predictor", new PredictorComponent(engine_factory));
   r.Register("predict_translator",
              new PredictTranslatorComponent(engine_factory));
+  r.Register("predict_data_sync", new Component<PredictDataSync>);
 }
 
 static void rime_predict_finalize() {}

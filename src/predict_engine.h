@@ -5,6 +5,7 @@
 #include <msgpack.hpp>
 #include <leveldb/db.h>
 #include <mutex>
+#include <rime/dict/db.h>
 
 namespace rime {
 
@@ -45,6 +46,10 @@ class PredictDb {
                      const string& word,
                      bool todelete = false);
 
+  // Sync support
+  bool Backup(const path& snapshot_file);
+  bool Restore(const path& snapshot_file);
+
  private:
   leveldb::DB* db_;
   vector<string> candidates_;
@@ -70,6 +75,13 @@ class PredictEngine : public Class<PredictEngine, const Ticket&> {
   }
   void UpdatePredict(const string& key, const string& word, bool todelete) {
     level_db_->UpdatePredict(key, word, todelete);
+  }
+
+  bool BackupData(const path& snapshot_file) {
+    return level_db_->Backup(snapshot_file);
+  }
+  bool RestoreData(const path& snapshot_file) {
+    return level_db_->Restore(snapshot_file);
   }
 
  private:
