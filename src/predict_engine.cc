@@ -129,7 +129,7 @@ PredictEngine* PredictEngineComponent::Create(const Ticket& ticket) {
   auto file_path = resolver->ResolvePath(level_db_name);
   an<PredictDb> level_db = PredictDbManager::instance().GetPredictDb(file_path);
 
-  if (level_db->valid()) {
+  if (level_db && level_db->valid()) {
     return new PredictEngine(level_db, max_iterations, max_candidates);
   } else {
     LOG(ERROR) << "failed to load predict db: " << level_db_name;

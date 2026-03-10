@@ -47,6 +47,7 @@ Predictor::~Predictor() {
   select_connection_.disconnect();
   context_update_connection_.disconnect();
   delete_connection_.disconnect();
+  abort_connection_.disconnect();
 }
 
 ProcessResult Predictor::ProcessKeyEvent(const KeyEvent& key_event) {
