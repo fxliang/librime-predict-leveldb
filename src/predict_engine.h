@@ -37,7 +37,11 @@ class PredictDb {
   PredictDb(const path& file_path);
   ~PredictDb() { delete db_; }
   bool Lookup(const string& query);
-  void Clear() { vector<string>().swap(candidates_); }
+  void Clear() {
+    if (db_) {
+      vector<string>().swap(candidates_);
+    }
+  }
 
   bool valid() { return db_ != nullptr; }
   const vector<string>& candidates() const { return candidates_; }

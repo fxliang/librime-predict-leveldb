@@ -56,6 +56,9 @@ PredictEngine::~PredictEngine() {}
 
 bool PredictEngine::Predict(Context* ctx, const string& context_query) {
   DLOG(INFO) << "PredictEngine::Predict [" << context_query << "]";
+  if (!level_db_) {
+    return false;
+  }
   if (level_db_->Lookup(context_query)) {
     query_ = context_query;
     candidates_ = level_db_->candidates();
@@ -69,7 +72,9 @@ bool PredictEngine::Predict(Context* ctx, const string& context_query) {
 void PredictEngine::Clear() {
   DLOG(INFO) << "PredictEngine::Clear";
   query_.clear();
-  level_db_->Clear();
+  if (level_db_) {
+    level_db_->Clear();
+  }
   vector<string>().swap(candidates_);
 }
 
@@ -162,6 +167,9 @@ PredictDb::PredictDb(const path& file_path) {
 }
 
 bool PredictDb::Lookup(const string& query) {
+  if (!db_) {
+    return false;
+  }
   string value;
   leveldb::Status status = db_->Get(leveldb::ReadOptions(), query, &value);
   if (!status.ok()) {
@@ -184,6 +192,9 @@ bool PredictDb::Lookup(const string& query) {
 void PredictDb::UpdatePredict(const string& key,
                               const string& word,
                               bool todelete) {
+  if (!db_) {
+    return;
+  }
   string value;
   leveldb::Status status = db_->Get(leveldb::ReadOptions(), key, &value);
   std::vector<Prediction> predict;
