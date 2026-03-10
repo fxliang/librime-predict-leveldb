@@ -35,10 +35,12 @@ void Predictor::OnAbort(Context* ctx) {
   }
   predict_engine_->Clear();
   iteration_counter_ = 0;
-  self_updating_ = true;
-  ctx->Clear();
-  ctx->update_notifier()(ctx);
-  self_updating_ = false;
+  if (ctx->IsComposing()) {
+    self_updating_ = true;
+    ctx->Clear();
+    ctx->update_notifier()(ctx);
+    self_updating_ = false;
+  }
 }
 
 Predictor::~Predictor() {
