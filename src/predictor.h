@@ -45,7 +45,8 @@ class Predictor : public Processor {
   enum Action { kUnspecified, kSelect, kDelete };
   Action last_action_ = kUnspecified;
   bool self_updating_ = false;
-  int iteration_counter_ = 0;  // times has been predicted
+  int iteration_counter_ = 0;
+  string trigger_prefix_;
 
   an<PredictEngine> predict_engine_;
   connection select_connection_;
