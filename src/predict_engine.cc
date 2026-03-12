@@ -283,8 +283,10 @@ PredictEngine* PredictEngineComponent::Create(const Ticket& ticket) {
   int max_iterations = 0;
   if (auto* schema = ticket.schema) {
     auto* config = schema->config();
-    if (config->GetString("predictor/predictdb", &level_db_name)) {
-      LOG(INFO) << "custom predictor/predictdb" << level_db_name;
+    if (config->GetString("predictor/db", &level_db_name)) {
+      LOG(INFO) << "custom predictor/db: " << level_db_name;
+    } else if (config->GetString("predictor/predictdb", &level_db_name)) {
+      LOG(INFO) << "custom predictor/predictdb: " << level_db_name;
     }
     if (!config->GetInt("predictor/max_candidates", &max_candidates)) {
       LOG(INFO) << "predictor/max_candidates is not set in schema";
@@ -349,6 +351,14 @@ bool PredictDb::Lookup(const string& query) {
     return false;
   }
 
+  std::sort(predict.begin(), predict.end(),
+            [](const Prediction& a, const Prediction& b) {
+              if (a.commits != b.commits) {
+                return a.commits > b.commits;
+              }
+              return a.tick > b.tick;
+            });
+
   Clear();
   for (const auto& entry : predict) {
     candidates_.push_back(entry.word);
@@ -410,7 +420,10 @@ void PredictDb::UpdatePredict(const string& key,
     }
     std::sort(predict.begin(), predict.end(),
               [](const Prediction& a, const Prediction& b) {
-                return b.count < a.count;
+                if (a.commits != b.commits) {
+                  return a.commits > b.commits;
+                }
+                return a.tick > b.tick;
               });
 
   } else {
@@ -587,7 +600,10 @@ bool PredictDb::Restore(const path& snapshot_file) {
     }
     std::sort(predict.begin(), predict.end(),
               [](const Prediction& a, const Prediction& b) {
-                return b.count < a.count;
+                if (a.commits != b.commits) {
+                  return a.commits > b.commits;
+                }
+                return a.tick > b.tick;
               });
     msgpack::sbuffer sbuf;
     msgpack::pack(sbuf, predict);
