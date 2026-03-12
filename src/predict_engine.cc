@@ -5,6 +5,7 @@
 #include <fstream>
 #include <sstream>
 #include <vector>
+#include <boost/algorithm/string.hpp>
 #include <rime_api.h>
 #include <rime/candidate.h>
 #include <rime/context.h>
@@ -373,6 +374,16 @@ void PredictDb::UpdatePredict(const string& key,
   leveldb::Status status = db_->Get(leveldb::ReadOptions(), key, &value);
   std::vector<Prediction> predict;
 
+  string tick_str;
+  uint64_t current_tick = 1;
+  if (ReadDbTextValue(db_, "\x01/tick", "1", &tick_str)) {
+    try {
+      current_tick = std::stoull(tick_str);
+    } catch (...) {
+      current_tick = 1;
+    }
+  }
+
   if (status.ok()) {
     if (!DecodePredictions(value, &predict)) {
       LOG(WARNING) << "failed to decode existing prediction list for key: "
@@ -383,7 +394,6 @@ void PredictDb::UpdatePredict(const string& key,
     bool found = false;
     double total_count = 0.0;
 
-    // Calculate the total count
     for (const auto& entry : predict) {
       total_count += entry.count;
     }
@@ -398,13 +408,16 @@ void PredictDb::UpdatePredict(const string& key,
       for (auto& entry : predict) {
         if (entry.word == word) {
           entry.count += 1.0 / (total_count + 1.0);
+          entry.commits += 1;
+          entry.dee = entry.count;
+          entry.tick = current_tick;
           found = true;
           break;
         }
       }
     }
     if (!found && !todelete) {
-      predict.push_back({word, 1.0 / (total_count + 1.0)});
+      predict.push_back({word, 1.0 / (total_count + 1.0), 1, 1.0 / (total_count + 1.0), current_tick});
     }
     std::sort(predict.begin(), predict.end(),
               [](const Prediction& a, const Prediction& b) {
@@ -413,7 +426,7 @@ void PredictDb::UpdatePredict(const string& key,
 
   } else {
     if (!todelete) {
-      predict.push_back({word, 1.0});
+      predict.push_back({word, 1.0, 1, 1.0, current_tick});
     }
   }
 
@@ -471,7 +484,8 @@ bool PredictDb::Backup(const path& snapshot_file) {
       continue;
     }
     for (const auto& p : predict) {
-      out << key << "\t" << p.word << "\t" << p.count << "\n";
+      out << key << "\t" << p.word << "\tc=" << p.commits 
+          << " d=" << p.dee << " t=" << p.tick << "\n";
     }
   }
   delete it;
@@ -519,14 +533,47 @@ bool PredictDb::Restore(const path& snapshot_file) {
       continue;
     }
 
+    string metadata_str = line.substr(tab2 + 1);
+    int commits = 0;
+    double dee = 0.0;
+    uint64_t tick = 0;
     double count = 0.0;
-    try {
-      count = std::stod(line.substr(tab2 + 1));
-    } catch (const std::exception& ex) {
-      LOG(WARNING) << "skipping malformed predict snapshot row in "
-                   << snapshot_file << ": " << ex.what();
-      continue;
+
+    if (metadata_str.find("c=") != string::npos) {
+      vector<string> kv;
+      boost::split(kv, metadata_str, boost::is_any_of(" "));
+      for (const string& k_eq_v : kv) {
+        size_t eq = k_eq_v.find('=');
+        if (eq == string::npos)
+          continue;
+        string k(k_eq_v.substr(0, eq));
+        string v(k_eq_v.substr(eq + 1));
+        try {
+          if (k == "c") {
+            commits = std::stoi(v);
+          } else if (k == "d") {
+            dee = std::stod(v);
+          } else if (k == "t") {
+            tick = std::stoull(v);
+          }
+        } catch (...) {
+          LOG(WARNING) << "failed parsing metadata in predict snapshot: " << k_eq_v;
+        }
+      }
+      count = dee;
+    } else {
+      try {
+        count = std::stod(metadata_str);
+        commits = 1;
+        dee = count;
+        tick = 1;
+      } catch (const std::exception& ex) {
+        LOG(WARNING) << "skipping malformed predict snapshot row in "
+                     << snapshot_file << ": " << ex.what();
+        continue;
+      }
     }
+
     std::vector<Prediction> predict;
     string value;
     leveldb::Status status = db_->Get(leveldb::ReadOptions(), key, &value);
@@ -539,12 +586,15 @@ bool PredictDb::Restore(const path& snapshot_file) {
     for (auto& p : predict) {
       if (p.word == word) {
         p.count = std::max(p.count, count);
+        p.commits = std::max(p.commits, commits);
+        p.dee = std::max(p.dee, dee);
+        p.tick = std::max(p.tick, tick);
         found = true;
         break;
       }
     }
     if (!found) {
-      predict.push_back({word, count});
+      predict.push_back({word, count, commits, dee, tick});
     }
     std::sort(predict.begin(), predict.end(),
               [](const Prediction& a, const Prediction& b) {
