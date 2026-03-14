@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cstdint>
+#include <ctime>
 #include <fstream>
 #include <sstream>
 #include <vector>
@@ -191,6 +192,26 @@ static bool ReadDbTextValue(leveldb::DB* db,
   return true;
 }
 
+static int RecencyTier(uint64_t tick, uint64_t now) {
+  // Legacy tick values (pre-timestamp, before ~Sep 2001) treated as ancient
+  if (tick < 1000000000 || tick > now)
+    return 0;
+  uint64_t age = now - tick;
+  if (age <= 1800)
+    return 6;  // 30 min
+  if (age <= 3600)
+    return 5;  // 1 hour
+  if (age <= 7200)
+    return 4;  // 2 hours
+  if (age <= 14400)
+    return 3;  // 4 hours
+  if (age <= 28800)
+    return 2;  // 8 hours
+  if (age <= 86400)
+    return 1;  // 24 hours
+  return 0;
+}
+
 PredictDbManager& PredictDbManager::instance() {
   static PredictDbManager instance;
   return instance;
@@ -351,11 +372,15 @@ bool PredictDb::Lookup(const string& query) {
     return false;
   }
 
+  uint64_t now = static_cast<uint64_t>(std::time(nullptr));
   std::sort(predict.begin(), predict.end(),
-            [](const Prediction& a, const Prediction& b) {
-              if (a.commits != b.commits) {
+            [now](const Prediction& a, const Prediction& b) {
+              int tier_a = RecencyTier(a.tick, now);
+              int tier_b = RecencyTier(b.tick, now);
+              if (tier_a != tier_b)
+                return tier_a > tier_b;
+              if (a.commits != b.commits)
                 return a.commits > b.commits;
-              }
               return a.tick > b.tick;
             });
 
@@ -373,15 +398,7 @@ void PredictDb::UpdatePredict(const string& key,
   leveldb::Status status = db_->Get(leveldb::ReadOptions(), key, &value);
   std::vector<Prediction> predict;
 
-  string tick_str;
-  uint64_t current_tick = 1;
-  if (ReadDbTextValue(db_, "\x01/tick", "1", &tick_str)) {
-    try {
-      current_tick = std::stoull(tick_str);
-    } catch (...) {
-      current_tick = 1;
-    }
-  }
+  uint64_t current_tick = static_cast<uint64_t>(std::time(nullptr));
 
   if (status.ok()) {
     if (!DecodePredictions(value, &predict)) {
@@ -418,11 +435,15 @@ void PredictDb::UpdatePredict(const string& key,
     if (!found && !todelete) {
       predict.push_back({word, 1.0 / (total_count + 1.0), 1, 1.0 / (total_count + 1.0), current_tick});
     }
+    uint64_t now = static_cast<uint64_t>(std::time(nullptr));
     std::sort(predict.begin(), predict.end(),
-              [](const Prediction& a, const Prediction& b) {
-                if (a.commits != b.commits) {
+              [now](const Prediction& a, const Prediction& b) {
+                int tier_a = RecencyTier(a.tick, now);
+                int tier_b = RecencyTier(b.tick, now);
+                if (tier_a != tier_b)
+                  return tier_a > tier_b;
+                if (a.commits != b.commits)
                   return a.commits > b.commits;
-                }
                 return a.tick > b.tick;
               });
 
@@ -474,9 +495,6 @@ bool PredictDb::Backup(const path& snapshot_file) {
   for (it->SeekToFirst(); it->Valid(); it->Next()) {
     string key = it->key().ToString();
     if (key.empty() || key[0] == '\x01' || key[0] == '/') {
-      continue;
-    }
-    if (!IsChineseOnlyKey(key)) {
       continue;
     }
 
@@ -531,9 +549,6 @@ bool PredictDb::Restore(const path& snapshot_file) {
 
     string key = line.substr(0, tab1);
     string word = line.substr(tab1 + 1, tab2 - tab1 - 1);
-    if (!IsChineseOnlyKey(key)) {
-      continue;
-    }
 
     string metadata_str = line.substr(tab2 + 1);
     int commits = 0;
@@ -598,11 +613,15 @@ bool PredictDb::Restore(const path& snapshot_file) {
     if (!found) {
       predict.push_back({word, count, commits, dee, tick});
     }
+    uint64_t now = static_cast<uint64_t>(std::time(nullptr));
     std::sort(predict.begin(), predict.end(),
-              [](const Prediction& a, const Prediction& b) {
-                if (a.commits != b.commits) {
+              [now](const Prediction& a, const Prediction& b) {
+                int tier_a = RecencyTier(a.tick, now);
+                int tier_b = RecencyTier(b.tick, now);
+                if (tier_a != tier_b)
+                  return tier_a > tier_b;
+                if (a.commits != b.commits)
                   return a.commits > b.commits;
-                }
                 return a.tick > b.tick;
               });
     msgpack::sbuffer sbuf;

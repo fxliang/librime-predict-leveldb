@@ -134,27 +134,39 @@ void Predictor::OnContextUpdate(Context* ctx) {
     return;
   }
 
-  if (!trigger_prefix_.empty() && last_action_ == kSelect) {
+  if (!trigger_prefix_.empty()) {
     if (!ctx->commit_history().empty()) {
       auto last_commit = ctx->commit_history().back();
+
+      if (last_commit.type == "punct" || last_commit.type == "raw" ||
+          last_commit.type == "thru") {
+        predict_engine_->Clear();
+        iteration_counter_ = 0;
+        last_action_ = kUnspecified;
+        return;
+      }
+
+      // learn from every normal commit, not just prediction commits
+      if (ctx->commit_history().size() >= 2) {
+        auto pre_last_commit = *std::prev(ctx->commit_history().end(), 2);
+        predict_engine_->UpdatePredict(pre_last_commit.text, last_commit.text,
+                                       false);
+      }
+
       if (last_commit.type == "prediction") {
         int max_iterations = predict_engine_->max_iterations();
-        
-        if (ctx->commit_history().size() >= 2) {
-          auto pre_last_commit = *std::prev(ctx->commit_history().end(), 2);
-          predict_engine_->UpdatePredict(pre_last_commit.text, last_commit.text,
-                                         false);
-        }
 
         last_action_ = kUnspecified;
-        
+
         if (max_iterations > 0 && iteration_counter_ >= max_iterations) {
           predict_engine_->Clear();
           iteration_counter_ = 0;
+          self_updating_ = true;
           ctx->Clear();
+          self_updating_ = false;
           return;
         }
-        
+
         iteration_counter_++;
         PredictAndUpdate(ctx, last_commit.text);
         return;
