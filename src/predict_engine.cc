@@ -157,17 +157,20 @@ static bool IsChineseCodePoint(uint32_t code_point) {
       (code_point >= 0x30000 && code_point <= 0x3134F);    // CJK Ext G
 }
 
-static bool IsChineseOnlyKey(const string& text) {
-  if (text.empty()) {
-    return false;
-  }
+static bool IsPunctOnly(const string& text) {
+  if (text.empty())
+    return true;
   size_t index = 0;
   while (index < text.size()) {
     uint32_t code_point = 0;
-    if (!ReadNextUtf8CodePoint(text, &index, &code_point) ||
-        !IsChineseCodePoint(code_point)) {
+    if (!ReadNextUtf8CodePoint(text, &index, &code_point))
+      continue;
+    if (IsChineseCodePoint(code_point))
       return false;
-    }
+    if ((code_point >= '0' && code_point <= '9') ||
+        (code_point >= 'A' && code_point <= 'Z') ||
+        (code_point >= 'a' && code_point <= 'z'))
+      return false;
   }
   return true;
 }
@@ -210,6 +213,25 @@ static int RecencyTier(uint64_t tick, uint64_t now) {
   if (age <= 86400)
     return 1;  // 24 hours
   return 0;
+}
+
+static void SortPredictions(std::vector<Prediction>& predict) {
+  uint64_t now = static_cast<uint64_t>(std::time(nullptr));
+  bool has_recent = std::any_of(
+      predict.begin(), predict.end(),
+      [now](const Prediction& p) { return RecencyTier(p.tick, now) > 0; });
+  std::sort(predict.begin(), predict.end(),
+            [now, has_recent](const Prediction& a, const Prediction& b) {
+              if (has_recent) {
+                int tier_a = RecencyTier(a.tick, now);
+                int tier_b = RecencyTier(b.tick, now);
+                if (tier_a != tier_b)
+                  return tier_a > tier_b;
+              }
+              if (a.commits != b.commits)
+                return a.commits > b.commits;
+              return a.tick > b.tick;
+            });
 }
 
 PredictDbManager& PredictDbManager::instance() {
@@ -380,17 +402,7 @@ bool PredictDb::Lookup(const string& query) {
     return false;
   }
 
-  uint64_t now = static_cast<uint64_t>(std::time(nullptr));
-  std::sort(predict.begin(), predict.end(),
-            [now](const Prediction& a, const Prediction& b) {
-              int tier_a = RecencyTier(a.tick, now);
-              int tier_b = RecencyTier(b.tick, now);
-              if (tier_a != tier_b)
-                return tier_a > tier_b;
-              if (a.commits != b.commits)
-                return a.commits > b.commits;
-              return a.tick > b.tick;
-            });
+  SortPredictions(predict);
 
   Clear();
   for (const auto& entry : predict) {
@@ -403,6 +415,9 @@ void PredictDb::UpdatePredict(const string& key,
                               const string& word,
                               bool todelete) {
   if (!db_) {
+    return;
+  }
+  if (IsPunctOnly(key)) {
     return;
   }
   string value;
@@ -446,17 +461,7 @@ void PredictDb::UpdatePredict(const string& key,
     if (!found && !todelete) {
       predict.push_back({word, 1.0 / (total_count + 1.0), 1, 1.0 / (total_count + 1.0), current_tick});
     }
-    uint64_t now = static_cast<uint64_t>(std::time(nullptr));
-    std::sort(predict.begin(), predict.end(),
-              [now](const Prediction& a, const Prediction& b) {
-                int tier_a = RecencyTier(a.tick, now);
-                int tier_b = RecencyTier(b.tick, now);
-                if (tier_a != tier_b)
-                  return tier_a > tier_b;
-                if (a.commits != b.commits)
-                  return a.commits > b.commits;
-                return a.tick > b.tick;
-              });
+    SortPredictions(predict);
 
   } else {
     if (!todelete) {
@@ -506,6 +511,9 @@ bool PredictDb::Backup(const path& snapshot_file) {
   for (it->SeekToFirst(); it->Valid(); it->Next()) {
     string key = it->key().ToString();
     if (key.empty() || key[0] == '\x01' || key[0] == '/') {
+      continue;
+    }
+    if (IsPunctOnly(key)) {
       continue;
     }
 
@@ -624,17 +632,7 @@ bool PredictDb::Restore(const path& snapshot_file) {
     if (!found) {
       predict.push_back({word, count, commits, dee, tick});
     }
-    uint64_t now = static_cast<uint64_t>(std::time(nullptr));
-    std::sort(predict.begin(), predict.end(),
-              [now](const Prediction& a, const Prediction& b) {
-                int tier_a = RecencyTier(a.tick, now);
-                int tier_b = RecencyTier(b.tick, now);
-                if (tier_a != tier_b)
-                  return tier_a > tier_b;
-                if (a.commits != b.commits)
-                  return a.commits > b.commits;
-                return a.tick > b.tick;
-              });
+    SortPredictions(predict);
     msgpack::sbuffer sbuf;
     msgpack::pack(sbuf, predict);
     status = db_->Put(leveldb::WriteOptions(), key,
