@@ -20,6 +20,7 @@ Predictor::Predictor(const Ticket& ticket, an<PredictEngine> predict_engine)
     : Processor(ticket), predict_engine_(predict_engine) {
   if (auto* config = ticket.schema->config()) {
     config->GetString("predictor/trigger", &trigger_prefix_);
+    config->GetString("predictor/cancel_predict", &cancel_predict_);
   }
 
   auto* context = engine_->context();
@@ -60,7 +61,14 @@ ProcessResult Predictor::ProcessKeyEvent(const KeyEvent& key_event) {
   auto* ctx = engine_->context();
   auto keycode = key_event.keycode();
 
-  if (keycode == XK_BackSpace || keycode == XK_Escape) {
+  // Check if this is a cancel key (BackSpace, Escape, or configured cancel_predict)
+  bool is_cancel_key = (keycode == XK_BackSpace || keycode == XK_Escape);
+  if (!is_cancel_key && !cancel_predict_.empty() &&
+      keycode > 0x20 && keycode < 0x7f) {
+    is_cancel_key = (static_cast<char>(keycode) == cancel_predict_[0]);
+  }
+
+  if (is_cancel_key) {
     last_action_ = kDelete;
     predict_engine_->Clear();
     iteration_counter_ = 0;
@@ -182,6 +190,7 @@ void Predictor::OnContextUpdate(Context* ctx) {
   if (trigger_prefix_.empty()) {
     if (ctx->commit_history().empty()) {
       PredictAndUpdate(ctx, "$");
+      iteration_counter_ = 1;
       return;
     }
     auto last_commit = ctx->commit_history().back();
@@ -209,6 +218,8 @@ void Predictor::OnContextUpdate(Context* ctx) {
         return;
       }
       iteration_counter_++;
+    } else {
+      iteration_counter_ = 1;
     }
     PredictAndUpdate(ctx, last_commit.text);
   }

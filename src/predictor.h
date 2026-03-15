@@ -47,6 +47,7 @@ class Predictor : public Processor {
   bool self_updating_ = false;
   int iteration_counter_ = 0;
   string trigger_prefix_;
+  string cancel_predict_;
 
   an<PredictEngine> predict_engine_;
   connection select_connection_;
