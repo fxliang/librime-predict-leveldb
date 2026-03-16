@@ -1,12 +1,15 @@
 # librime-predict-leveldb
+
 librime plugin. predict next word by commit history.
 
 a mod of `rime/librime-predict`
 
 ## Usage
+
 * In `*.schema.yaml`, add `predictor` to the list of `engine/processors` before `key_binder`,
-add `predict_translator` to the list of `engine/translators`;
-or patch the schema with:
+  add `predict_translator` to the list of `engine/translators`;
+  or patch the schema with:
+
 ```yaml
 patch:
   'engine/processors/@before 0': predictor
@@ -14,13 +17,16 @@ patch:
 ```
 
 * Add the `prediction` switch:
+
 ```yaml
 switches:
   - name: prediction
     states: [ 關閉預測, 開啓預測 ]
     reset: 1
 ```
+
 * Config items for your predictor:
+
 ```yaml
 predictor:
   # predict db folder in user directory
@@ -34,5 +40,8 @@ predictor:
   # max continuous prediction times
   # default to 0, which means no limitation
   max_iterations: 1
+  trigger: 'jj'                     # 手动触发弹出预测候选菜单
+  cancel_predict: "/"               # 额外的用于关闭预测菜单按键
 ```
+
 * Deploy and enjoy.

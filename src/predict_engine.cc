@@ -24,24 +24,55 @@ namespace rime {
 static const ResourceType kPredictDbPredictDbResourceType = {"level_predict_db",
                                                              "", ""};
 
+// 旧版本的 Prediction 结构（只有 word 和 count）
+struct LegacyPrediction {
+  std::string word;
+  double count;
+  MSGPACK_DEFINE(word, count);
+};
+
 static bool DecodePredictions(const string& value,
                               std::vector<Prediction>* predict) {
   if (!predict) {
     return false;
   }
   predict->clear();
+
+  // 尝试解码为新格式（5 字段）
   try {
     msgpack::unpacked unpacked;
     msgpack::unpack(unpacked, value.data(), value.size());
     unpacked.get().convert(*predict);
     return true;
   } catch (const std::exception& ex) {
-    LOG(WARNING) << "failed to decode predict db entry as msgpack: "
-                 << ex.what();
+    DLOG(INFO) << "failed to decode as new format msgpack: " << ex.what();
   } catch (...) {
-    LOG(WARNING) << "failed to decode predict db entry as msgpack.";
+    DLOG(INFO) << "failed to decode as new format msgpack.";
   }
 
+  // 尝试解码为旧格式（2 字段）msgpack
+  try {
+    msgpack::unpacked unpacked;
+    msgpack::unpack(unpacked, value.data(), value.size());
+    std::vector<LegacyPrediction> legacy_predict;
+    unpacked.get().convert(legacy_predict);
+
+    // 转换为新格式，使用默认值填充新字段
+    for (const auto& legacy : legacy_predict) {
+      predict->push_back({legacy.word, legacy.count, 0, 0.0, 0});
+    }
+
+    if (!predict->empty()) {
+      LOG(INFO) << "decoded predict db entry using legacy msgpack format.";
+      return true;
+    }
+  } catch (const std::exception& ex) {
+    DLOG(INFO) << "failed to decode as legacy msgpack: " << ex.what();
+  } catch (...) {
+    DLOG(INFO) << "failed to decode as legacy msgpack.";
+  }
+
+  // 最后尝试旧的文本格式
   std::istringstream iss(value);
   string word;
   double count = 0.0;
@@ -58,7 +89,7 @@ static bool DecodePredictions(const string& value,
     } catch (const std::exception&) {
       continue;
     }
-    predict->push_back({word, count});
+    predict->push_back({word, count, 0, 0.0, 0});
   }
 
   if (!predict->empty()) {
@@ -387,6 +418,7 @@ PredictDb::PredictDb(const path& file_path) {
 }
 
 bool PredictDb::Lookup(const string& query) {
+  std::shared_lock<std::shared_mutex> lock(rw_mutex_);  // 读锁
   if (!db_) {
     return false;
   }
@@ -414,6 +446,7 @@ bool PredictDb::Lookup(const string& query) {
 void PredictDb::UpdatePredict(const string& key,
                               const string& word,
                               bool todelete) {
+  std::unique_lock<std::shared_mutex> lock(rw_mutex_);  // 写锁
   if (!db_) {
     return;
   }
@@ -481,6 +514,7 @@ void PredictDb::UpdatePredict(const string& key,
 }
 
 bool PredictDb::Backup(const path& snapshot_file) {
+  std::shared_lock<std::shared_mutex> lock(rw_mutex_);  // 读锁
   LOG(INFO) << "backing up predict db to " << snapshot_file;
   std::ofstream out(snapshot_file.string());
   if (!out) {
@@ -523,7 +557,7 @@ bool PredictDb::Backup(const path& snapshot_file) {
       continue;
     }
     for (const auto& p : predict) {
-      out << key << "\t" << p.word << "\tc=" << p.commits 
+      out << key << "\t" << p.word << "\tc=" << p.commits
           << " d=" << p.dee << " t=" << p.tick << "\n";
     }
   }
@@ -533,6 +567,7 @@ bool PredictDb::Backup(const path& snapshot_file) {
 }
 
 bool PredictDb::Restore(const path& snapshot_file) {
+  std::unique_lock<std::shared_mutex> lock(rw_mutex_);  // 写锁
   LOG(INFO) << "restoring predict db from " << snapshot_file;
   std::ifstream in(snapshot_file.string());
   if (!in) {

@@ -5,6 +5,7 @@
 #include <msgpack.hpp>
 #include <leveldb/db.h>
 #include <mutex>
+#include <shared_mutex>
 #include <rime/dict/db.h>
 
 namespace rime {
@@ -60,6 +61,7 @@ class PredictDb {
  private:
   leveldb::DB* db_;
   vector<string> candidates_;
+  mutable std::shared_mutex rw_mutex_;  // 保护数据库并发访问
   friend class PredictDbManager;
 };
 
