@@ -585,7 +585,16 @@ bool PredictDb::Restore(const path& snapshot_file) {
     } else {
       try {
         count = std::stod(metadata_str);
-        commits = 1;
+        // 根据旧格式的权重值估算提交次数
+        if (count < 1.0) {
+          commits = 1;
+        } else if (count < 1.5) {
+          commits = 2;
+        } else if (count <= 2.0) {
+          commits = 3;
+        } else {
+          commits = static_cast<int>(std::ceil(count));
+        }
         dee = count;
         tick = 1;
       } catch (const std::exception& ex) {
