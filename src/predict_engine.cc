@@ -6,6 +6,7 @@
 #include <fstream>
 #include <sstream>
 #include <vector>
+#include <utf8.h>
 #include <boost/algorithm/string.hpp>
 #include <rime_api.h>
 #include <rime/candidate.h>
@@ -113,68 +114,6 @@ static string NormalizeSnapshotHeader(string header) {
   return header;
 }
 
-static bool ReadNextUtf8CodePoint(const string& text,
-                                  size_t* index,
-                                  uint32_t* code_point) {
-  if (!index || !code_point || *index >= text.size()) {
-    return false;
-  }
-
-  const unsigned char c0 = static_cast<unsigned char>(text[*index]);
-  if (c0 <= 0x7F) {
-    *code_point = c0;
-    ++(*index);
-    return true;
-  }
-
-  if ((c0 & 0xE0) == 0xC0) {
-    if (*index + 1 >= text.size()) {
-      return false;
-    }
-    const unsigned char c1 = static_cast<unsigned char>(text[*index + 1]);
-    if ((c1 & 0xC0) != 0x80) {
-      return false;
-    }
-    *code_point = ((c0 & 0x1F) << 6) | (c1 & 0x3F);
-    *index += 2;
-    return true;
-  }
-
-  if ((c0 & 0xF0) == 0xE0) {
-    if (*index + 2 >= text.size()) {
-      return false;
-    }
-    const unsigned char c1 = static_cast<unsigned char>(text[*index + 1]);
-    const unsigned char c2 = static_cast<unsigned char>(text[*index + 2]);
-    if ((c1 & 0xC0) != 0x80 || (c2 & 0xC0) != 0x80) {
-      return false;
-    }
-    *code_point =
-        ((c0 & 0x0F) << 12) | ((c1 & 0x3F) << 6) | (c2 & 0x3F);
-    *index += 3;
-    return true;
-  }
-
-  if ((c0 & 0xF8) == 0xF0) {
-    if (*index + 3 >= text.size()) {
-      return false;
-    }
-    const unsigned char c1 = static_cast<unsigned char>(text[*index + 1]);
-    const unsigned char c2 = static_cast<unsigned char>(text[*index + 2]);
-    const unsigned char c3 = static_cast<unsigned char>(text[*index + 3]);
-    if ((c1 & 0xC0) != 0x80 || (c2 & 0xC0) != 0x80 ||
-        (c3 & 0xC0) != 0x80) {
-      return false;
-    }
-    *code_point = ((c0 & 0x07) << 18) | ((c1 & 0x3F) << 12) |
-                  ((c2 & 0x3F) << 6) | (c3 & 0x3F);
-    *index += 4;
-    return true;
-  }
-
-  return false;
-}
-
 static bool IsChineseCodePoint(uint32_t code_point) {
   return
       (code_point >= 0x3400 && code_point <= 0x4DBF) ||    // CJK Ext A
@@ -191,18 +130,30 @@ static bool IsChineseCodePoint(uint32_t code_point) {
 static bool IsPunctOnly(const string& text) {
   if (text.empty())
     return true;
-  size_t index = 0;
-  while (index < text.size()) {
-    uint32_t code_point = 0;
-    if (!ReadNextUtf8CodePoint(text, &index, &code_point))
-      continue;
-    if (IsChineseCodePoint(code_point))
-      return false;
-    if ((code_point >= '0' && code_point <= '9') ||
-        (code_point >= 'A' && code_point <= 'Z') ||
-        (code_point >= 'a' && code_point <= 'z'))
-      return false;
+
+  const char* p = text.c_str();
+  const char* end = p + text.length();
+
+  try {
+    while (p < end) {
+      uint32_t code_point = utf8::next(p, end);
+
+      // 如果包含中文字符，不是纯标点
+      if (IsChineseCodePoint(code_point))
+        return false;
+
+      // 如果包含字母数字，不是纯标点
+      if ((code_point >= '0' && code_point <= '9') ||
+          (code_point >= 'A' && code_point <= 'Z') ||
+          (code_point >= 'a' && code_point <= 'z'))
+        return false;
+    }
+  } catch (const utf8::exception&) {
+    // UTF-8 解码失败，认为不是纯标点
+    DLOG(WARNING) << "invalid UTF-8 sequence in text: " << text;
+    return false;
   }
+
   return true;
 }
 
