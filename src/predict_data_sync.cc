@@ -19,8 +19,8 @@ static bool SyncPredictDb(Deployer* deployer, const string& db_name) {
   LOG(INFO) << "syncing predict db: " << db_name;
   bool success = true;
 
-  the<ResourceResolver> resolver(Service::instance().CreateResourceResolver(
-      kPredictDbResourceType));
+  the<ResourceResolver> resolver(
+      Service::instance().CreateResourceResolver(kPredictDbResourceType));
   auto file_path = resolver->ResolvePath(db_name);
 
   if (!fs::exists(file_path)) {
@@ -79,7 +79,8 @@ static bool SyncPredictDb(Deployer* deployer, const string& db_name) {
     LOG(INFO) << "merged " << merged_count << " predict snapshot(s)";
   }
   if (failed_count > 0) {
-    LOG(WARNING) << "failed to merge " << failed_count << " predict snapshot(s)";
+    LOG(WARNING) << "failed to merge " << failed_count
+                 << " predict snapshot(s)";
   }
 
   // 备份当前状态
@@ -111,8 +112,8 @@ bool PredictDataSync::Run(Deployer* deployer) {
     return false;
   }
 
-  the<ResourceResolver> resolver(Service::instance().CreateResourceResolver(
-      kPredictDbResourceType));
+  the<ResourceResolver> resolver(
+      Service::instance().CreateResourceResolver(kPredictDbResourceType));
 
   int total_count = 0;
   int failure_count = 0;

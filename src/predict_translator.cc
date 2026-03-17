@@ -29,9 +29,8 @@ an<Translation> PredictTranslator::Query(const string& input,
   int num_candidates = predict_engine_->num_candidates();
   if (num_candidates > 0) {
     int max_candidates = predict_engine_->max_candidates();
-    int limit = (max_candidates > 0)
-                    ? std::min(num_candidates, max_candidates)
-                    : num_candidates;
+    int limit = (max_candidates > 0) ? std::min(num_candidates, max_candidates)
+                                     : num_candidates;
     auto translation = New<FifoTranslation>();
     size_t end = segment.end;
     for (int i = 0; i < limit; ++i) {

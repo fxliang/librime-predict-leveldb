@@ -101,10 +101,8 @@ static bool DecodePredictions(const string& value,
 }
 
 static string NormalizeSnapshotHeader(string header) {
-  if (!header.empty() &&
-      static_cast<unsigned char>(header[0]) == 0xEF &&
-      header.size() >= 3 &&
-      static_cast<unsigned char>(header[1]) == 0xBB &&
+  if (!header.empty() && static_cast<unsigned char>(header[0]) == 0xEF &&
+      header.size() >= 3 && static_cast<unsigned char>(header[1]) == 0xBB &&
       static_cast<unsigned char>(header[2]) == 0xBF) {
     header.erase(0, 3);
   }
@@ -115,16 +113,15 @@ static string NormalizeSnapshotHeader(string header) {
 }
 
 static bool IsChineseCodePoint(uint32_t code_point) {
-  return
-      (code_point >= 0x3400 && code_point <= 0x4DBF) ||    // CJK Ext A
-      (code_point >= 0x4E00 && code_point <= 0x9FFF) ||    // CJK Unified
-      (code_point >= 0xF900 && code_point <= 0xFAFF) ||    // CJK Compatibility
-      (code_point >= 0x20000 && code_point <= 0x2A6DF) ||  // CJK Ext B
-      (code_point >= 0x2A700 && code_point <= 0x2B73F) ||  // CJK Ext C
-      (code_point >= 0x2B740 && code_point <= 0x2B81F) ||  // CJK Ext D
-      (code_point >= 0x2B820 && code_point <= 0x2CEAF) ||  // CJK Ext E-F
-      (code_point >= 0x2CEB0 && code_point <= 0x2EBEF) ||  // CJK Ext G-I
-      (code_point >= 0x30000 && code_point <= 0x3134F);    // CJK Ext G
+  return (code_point >= 0x3400 && code_point <= 0x4DBF) ||  // CJK Ext A
+         (code_point >= 0x4E00 && code_point <= 0x9FFF) ||  // CJK Unified
+         (code_point >= 0xF900 && code_point <= 0xFAFF) ||  // CJK Compatibility
+         (code_point >= 0x20000 && code_point <= 0x2A6DF) ||  // CJK Ext B
+         (code_point >= 0x2A700 && code_point <= 0x2B73F) ||  // CJK Ext C
+         (code_point >= 0x2B740 && code_point <= 0x2B81F) ||  // CJK Ext D
+         (code_point >= 0x2B820 && code_point <= 0x2CEAF) ||  // CJK Ext E-F
+         (code_point >= 0x2CEB0 && code_point <= 0x2EBEF) ||  // CJK Ext G-I
+         (code_point >= 0x30000 && code_point <= 0x3134F);    // CJK Ext G
 }
 
 static bool IsPunctOnly(const string& text) {
@@ -443,7 +440,8 @@ void PredictDb::UpdatePredict(const string& key,
       }
     }
     if (!found && !todelete) {
-      predict.push_back({word, 1.0 / (total_count + 1.0), 1, 1.0 / (total_count + 1.0), current_tick});
+      predict.push_back({word, 1.0 / (total_count + 1.0), 1,
+                         1.0 / (total_count + 1.0), current_tick});
     }
     SortPredictions(predict);
 
@@ -508,8 +506,8 @@ bool PredictDb::Backup(const path& snapshot_file) {
       continue;
     }
     for (const auto& p : predict) {
-      out << key << "\t" << p.word << "\tc=" << p.commits
-          << " d=" << p.dee << " t=" << p.tick << "\n";
+      out << key << "\t" << p.word << "\tc=" << p.commits << " d=" << p.dee
+          << " t=" << p.tick << "\n";
     }
   }
   delete it;
@@ -579,7 +577,8 @@ bool PredictDb::Restore(const path& snapshot_file) {
             tick = std::stoull(v);
           }
         } catch (...) {
-          LOG(WARNING) << "failed parsing metadata in predict snapshot: " << k_eq_v;
+          LOG(WARNING) << "failed parsing metadata in predict snapshot: "
+                       << k_eq_v;
         }
       }
       count = dee;

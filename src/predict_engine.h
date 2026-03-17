@@ -13,9 +13,9 @@ namespace rime {
 struct Prediction {
   std::string word;
   double count;
-  int commits = 0;      // commit count (c)
-  double dee = 0.0;     // weight/distance (d)
-  uint64_t tick = 0;    // timestamp (t)
+  int commits = 0;    // commit count (c)
+  double dee = 0.0;   // weight/distance (d)
+  uint64_t tick = 0;  // timestamp (t)
   MSGPACK_DEFINE(word, count, commits, dee, tick);
 };
 

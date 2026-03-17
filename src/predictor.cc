@@ -61,10 +61,11 @@ ProcessResult Predictor::ProcessKeyEvent(const KeyEvent& key_event) {
   auto* ctx = engine_->context();
   auto keycode = key_event.keycode();
 
-  // Check if this is a cancel key (BackSpace, Escape, or configured cancel_predict)
+  // Check if this is a cancel key (BackSpace, Escape, or configured
+  // cancel_predict)
   bool is_cancel_key = (keycode == XK_BackSpace || keycode == XK_Escape);
-  if (!is_cancel_key && !cancel_predict_.empty() &&
-      keycode > 0x20 && keycode < 0x7f) {
+  if (!is_cancel_key && !cancel_predict_.empty() && keycode > 0x20 &&
+      keycode < 0x7f) {
     is_cancel_key = (static_cast<char>(keycode) == cancel_predict_[0]);
   }
 
