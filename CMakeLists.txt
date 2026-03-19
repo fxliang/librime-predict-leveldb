@@ -2,6 +2,8 @@ project(rime-predict)
 cmake_minimum_required(VERSION 3.10)
 
 aux_source_directory(src predict_src)
+
+# msgpack (保留用于旧数据迁移)
 include_directories(deps/msgpack-c/include)
 
 add_library(rime-predict-objs OBJECT ${predict_src})
