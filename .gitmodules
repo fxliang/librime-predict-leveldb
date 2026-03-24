@@ -1,6 +1,3 @@
 [submodule "deps/msgpack-c"]
 	path = deps/msgpack-c
 	url = https://github.com/msgpack/msgpack-c.git
-[submodule "deps/nlohmann-json"]
-	path = deps/nlohmann-json
-	url = https://github.com/nlohmann/json.git
