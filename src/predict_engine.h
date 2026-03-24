@@ -18,6 +18,8 @@
 #include <sstream>
 #include <cmath>
 #include <array>
+#include <ctime>
+#include <deque>
 
 namespace rime {
 
@@ -190,6 +192,38 @@ struct MigrationStats {
 };
 
 // ============================================================================
+// EMA 活跃度估算器（用于旧词清理）
+// ============================================================================
+
+class ActivityEstimator {
+ public:
+  explicit ActivityEstimator(double alpha = 0.2);
+  
+  // 更新观测值（tick 差和小时数）
+  void Update(TickCount tick_diff, double hours);
+  
+  // 获取估算的每天输入次数
+  int GetInputsPerDay() const { return static_cast<int>(ema_); }
+  
+  // 重置（用于调试）
+  void Reset(double initial = 500.0) { ema_ = initial; }
+  
+ private:
+  double ema_ = 500.0;     // EMA 值，初始为默认值 500（中度用户）
+  double alpha_ = 0.2;     // 平滑系数（0.2 = 约最近 10 次观测的权重）
+};
+
+// ============================================================================
+// 旧词清理配置
+// ============================================================================
+
+struct CleanupConfig {
+  bool enabled = false;
+  int expire_days = 7;
+  int min_usage = 5;
+};
+
+// ============================================================================
 // 注：自定义合并回调已移除
 // 数据格式与 librime 标准 userdb 完全兼容，使用标准同步机制即可
 // ============================================================================
@@ -235,6 +269,11 @@ class PredictDb : public UserDbWrapper<LevelDb> {
   bool IsMigrationComplete() const { return migration_complete_; }
   void WaitForMigration(std::chrono::milliseconds timeout = std::chrono::seconds(5));
 
+  // 旧词清理功能
+  void SetCleanupConfig(const CleanupConfig& config);
+  int CleanupStaleEntries();
+  int GetEstimatedInputsPerDay() const { return activity_estimator_.GetInputsPerDay(); }
+
  private:
   // 迁移相关
   bool DetectLegacyFormat();
@@ -261,6 +300,13 @@ class PredictDb : public UserDbWrapper<LevelDb> {
   // 后台迁移线程
   std::thread migration_thread_;
 
+  // 旧词清理相关
+  ActivityEstimator activity_estimator_;
+  CleanupConfig cleanup_config_;
+  TickCount last_recorded_tick_ = 0;
+  time_t last_recorded_time_ = 0;
+  std::atomic<bool> cleanup_in_progress_{false};
+
   friend class PredictDbManager;
 };
 
@@ -283,6 +329,13 @@ class PredictEngine : public Class<PredictEngine, const Ticket&> {
   }
   void UpdatePredict(const string& key, const string& word, bool todelete) {
     level_db_->UpdatePredict(key, word, todelete);
+  }
+  
+  // 清理配置
+  void SetCleanupConfig(const CleanupConfig& config) {
+    if (level_db_) {
+      level_db_->SetCleanupConfig(config);
+    }
   }
 
  private:

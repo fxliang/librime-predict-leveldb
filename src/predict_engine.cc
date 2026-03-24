@@ -134,7 +134,23 @@ PredictEngine* PredictEngineComponent::Create(const Ticket& ticket) {
   an<PredictDb> level_db = PredictDbManager::instance().GetPredictDb(file_path);
 
   if (level_db && level_db->valid()) {
-    return new PredictEngine(level_db, max_iterations, max_candidates);
+    auto* engine = new PredictEngine(level_db, max_iterations, max_candidates);
+    
+    // 读取并设置清理配置
+    CleanupConfig cleanup_config;
+    if (auto* schema = ticket.schema) {
+      auto* config = schema->config();
+      config->GetBool("predictor/cleanup/enabled", &cleanup_config.enabled);
+      config->GetInt("predictor/cleanup/expire_days", &cleanup_config.expire_days);
+      config->GetInt("predictor/cleanup/min_usage", &cleanup_config.min_usage);
+      
+      DLOG(INFO) << "cleanup config: enabled=" << cleanup_config.enabled
+                 << ", expire_days=" << cleanup_config.expire_days
+                 << ", min_usage=" << cleanup_config.min_usage;
+    }
+    engine->SetCleanupConfig(cleanup_config);
+    
+    return engine;
   } else {
     LOG(ERROR) << "failed to load predict db: " << level_db_name;
   }
@@ -209,6 +225,21 @@ PredictDb::~PredictDb() {
     if (migration_thread_.joinable()) {
       migration_thread_.join();
     }
+  }
+  
+  // 触发旧词清理
+  if (cleanup_config_.enabled && loaded()) {
+    int cleaned = CleanupStaleEntries();
+    LOG(INFO) << "PredictDb cleanup: " << cleaned 
+              << " stale entries removed";
+    LOG(INFO) << "Estimated user activity: " 
+              << activity_estimator_.GetInputsPerDay() 
+              << " inputs/day";
+  }
+  
+  // 等待清理完成
+  while (cleanup_in_progress_.load()) {
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
   }
 }
 
@@ -861,6 +892,182 @@ void PredictDb::UpdatePredict(const string& key, const string& word, bool todele
 
   // 更新全局 tick
   MetaUpdate("/tick", std::to_string(current_tick));
+  
+  // 记录输入样本用于 EMA 活跃度估算（仅非删除操作）
+  if (!todelete && loaded()) {
+    time_t current_time = std::time(nullptr);
+    
+    // 有历史记录时才更新 EMA
+    if (last_recorded_tick_ > 0 && last_recorded_time_ > 0) {
+      TickCount tick_diff = current_tick - last_recorded_tick_;
+      double hours = static_cast<double>(current_time - last_recorded_time_) / 3600.0;
+      activity_estimator_.Update(tick_diff, hours);
+    }
+    
+    // 更新历史记录
+    last_recorded_tick_ = current_tick;
+    last_recorded_time_ = current_time;
+  }
+}
+
+// ============================================================================
+// ActivityEstimator 实现
+// ============================================================================
+
+ActivityEstimator::ActivityEstimator(double alpha)
+    : ema_(500.0), alpha_(alpha) {
+  // alpha = 0.2 表示：
+  // - 最新观测值权重 20%
+  // - 历史 EMA 权重 80%
+  // - 约等效于最近 10 次观测的加权平均
+}
+
+void ActivityEstimator::Update(TickCount tick_diff, double hours) {
+  // 过滤异常数据（1 分钟 ~ 24 小时）
+  if (hours < 0.017 || hours > 24.0) {
+    DLOG(INFO) << "ActivityEstimator: skipped (hours=" << hours << ")";
+    return;
+  }
+  
+  if (tick_diff <= 0) {
+    return;
+  }
+  
+  // 计算当前观测值（次/天）
+  // 示例：tick_diff=100, hours=2 → current = 100 / (2/24) = 1200 次/天
+  double current_inputs_per_day = static_cast<double>(tick_diff) / (hours / 24.0);
+  
+  // 限制合理范围（避免极端值影响）
+  current_inputs_per_day = std::clamp(current_inputs_per_day, 50.0, 5000.0);
+  
+  // EMA 更新公式：ema = α × current + (1 - α) × ema
+  ema_ = alpha_ * current_inputs_per_day + (1.0 - alpha_) * ema_;
+  
+  DLOG(INFO) << "ActivityEstimator::Update: "
+             << "tick_diff=" << tick_diff
+             << ", hours=" << hours
+             << ", current=" << static_cast<int>(current_inputs_per_day)
+             << ", ema=" << static_cast<int>(ema_);
+}
+
+// ============================================================================
+// 清理配置和清理逻辑
+// ============================================================================
+
+void PredictDb::SetCleanupConfig(const CleanupConfig& config) {
+  cleanup_config_ = config;
+  DLOG(INFO) << "CleanupConfig set: enabled=" << config.enabled
+             << ", expire_days=" << config.expire_days
+             << ", min_usage=" << config.min_usage;
+}
+
+int PredictDb::CleanupStaleEntries() {
+  if (!cleanup_config_.enabled || !loaded()) {
+    return 0;
+  }
+  
+  cleanup_in_progress_ = true;
+  
+  // 获取当前 tick
+  TickCount current_tick = 0;
+  string tick_str;
+  if (MetaFetch("/tick", &tick_str)) {
+    try {
+      current_tick = std::stoul(tick_str);
+    } catch (...) {
+      current_tick = 0;
+    }
+  }
+  
+  // 获取 EMA 估算的活跃度
+  int inputs_per_day = activity_estimator_.GetInputsPerDay();
+  
+  // 计算清理阈值
+  // expire_tick = expire_days × inputs_per_day
+  // 示例：7 天 × 500 次/天 = 3500 tick
+  int expire_tick = cleanup_config_.expire_days * inputs_per_day;
+  
+  // min_commits = min_usage × 100
+  // 示例：5 次 × 100 = 500 commits
+  int min_commits = cleanup_config_.min_usage * 100;
+  
+  DLOG(INFO) << "CleanupStaleEntries: "
+             << "current_tick=" << current_tick
+             << ", inputs_per_day=" << inputs_per_day
+             << ", expire_tick=" << expire_tick
+             << ", min_commits=" << min_commits;
+  
+  int cleaned_count = 0;
+  int scanned_count = 0;
+  
+  auto accessor = QueryAll();
+  if (!accessor) {
+    LOG(ERROR) << "CleanupStaleEntries: QueryAll failed";
+    cleanup_in_progress_ = false;
+    return 0;
+  }
+  
+  // 批量删除（每 100 条提交一次，避免阻塞）
+  constexpr int kBatchSize = 100;
+  std::vector<std::string> keys_to_delete;
+  
+  string key, value;
+  while (accessor->GetNextRecord(&key, &value)) {
+    scanned_count++;
+    
+    // 跳过元数据
+    if (!key.empty() && key[0] == '\x01') {
+      continue;
+    }
+    
+    // 解析条目
+    PredictEntry entry;
+    if (!entry.Unpack(value)) {
+      DLOG(INFO) << "CleanupStaleEntries: failed to unpack key='" << key << "'";
+      continue;
+    }
+    
+    // 计算时间差（tick 差）
+    TickCount delta = current_tick - entry.tick;
+    
+    // 判断是否过期
+    // 条件 1: 超过 expire_tick 未使用
+    // 条件 2: 使用次数 < min_usage
+    if (delta > expire_tick && entry.commits < min_commits) {
+      keys_to_delete.push_back(key);
+      cleaned_count++;
+      
+      DLOG(INFO) << "CleanupStaleEntries: marking for deletion: "
+                 << "key='" << key << "', "
+                 << "delta=" << delta
+                 << " (≈" << delta / inputs_per_day << "天), "
+                 << "commits=" << entry.commits
+                 << " (≈" << entry.commits / 100 << "次)";
+    }
+    
+    // 批量提交删除
+    if (static_cast<int>(keys_to_delete.size()) >= kBatchSize) {
+      for (const auto& k : keys_to_delete) {
+        Erase(k);
+      }
+      keys_to_delete.clear();
+      
+      // yield，避免阻塞
+      std::this_thread::yield();
+    }
+  }
+  
+  // 删除剩余条目
+  for (const auto& k : keys_to_delete) {
+    Erase(k);
+  }
+  
+  DLOG(INFO) << "CleanupStaleEntries: completed, "
+             << "scanned=" << scanned_count
+             << ", cleaned=" << cleaned_count;
+  
+  cleanup_in_progress_ = false;
+  return cleaned_count;
 }
 
 }  // namespace rime
