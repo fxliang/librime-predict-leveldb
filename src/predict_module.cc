@@ -17,7 +17,8 @@ static void rime_predict_initialize() {
              new PredictTranslatorComponent(engine_factory));
 
   // 数据格式与 librime 标准 userdb 完全兼容，使用标准同步机制
-  LOG(INFO) << "Predict module initialized (standard userdb format, standard sync)";
+  LOG(INFO)
+      << "Predict module initialized (standard userdb format, standard sync)";
 }
 
 static void rime_predict_finalize() {

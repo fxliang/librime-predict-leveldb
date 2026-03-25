@@ -12,8 +12,8 @@ jobs:
     steps:
       - name: Checkout last commit
         uses: actions/checkout@v4
-      - name: Install clang-format
-        run: sudo apt install -y clang-format
+      - name: Install clang-format-18
+        run: ./action-install-clang-format.sh 18
       - name: Lint
         run: find src tools -name '*.cc' -o -name '*.h' | xargs clang-format -Werror --dry-run || { echo Please lint your code by '"'"find src tools -name '*.cc' -o -name '*.h' | xargs clang-format -i"'"'.; false; }
 

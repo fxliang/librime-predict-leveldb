@@ -37,12 +37,16 @@ class DecayTable {
   // 获取衰减因子：exp(-delta / 200)
   // ✅ 优化：查表 O(1) + 线性插值，避免 exp() 计算并提高精度
   inline double GetDecayFactor(int delta) const {
-    if (delta < 0) return 1.0;
-    if (delta >= kTableSize * kStep) return 0.0;
+    if (delta < 0)
+      return 1.0;
+    if (delta >= kTableSize * kStep)
+      return 0.0;
 
     int index = delta / kStep;
-    if (index < 0) index = 0;
-    if (index >= kTableSize - 1) return table_[kTableSize - 1];
+    if (index < 0)
+      index = 0;
+    if (index >= kTableSize - 1)
+      return table_[kTableSize - 1];
 
     // ✅ 修复：线性插值提高精度
     int next_index = index + 1;
@@ -76,10 +80,10 @@ struct LegacyPrediction {
 // key 格式：prefix<TAB>predict_word (如 "你\t 好")
 // value 格式：c=5 d=100.0 t=12345
 struct PredictEntry {
-  std::string w;          // word (预测词)
-  int commits = 0;        // c = 词频（用于排序）
-  double dee = 0.0;       // d = 动态权重（遗忘曲线用）
-  TickCount tick = 0;     // t = 上次使用时间戳
+  std::string w;       // word (预测词)
+  int commits = 0;     // c = 词频（用于排序）
+  double dee = 0.0;    // d = 动态权重（遗忘曲线用）
+  TickCount tick = 0;  // t = 上次使用时间戳
 
   // 打包为标准 userdb 格式
   std::string Pack() const {
@@ -94,13 +98,17 @@ struct PredictEntry {
     std::string token;
     while (ss >> token) {
       size_t eq = token.find('=');
-      if (eq == std::string::npos) continue;
+      if (eq == std::string::npos)
+        continue;
       std::string k = token.substr(0, eq);
       std::string v = token.substr(eq + 1);
       try {
-        if (k == "c") commits = std::stoi(v);
-        else if (k == "d") dee = std::stod(v);
-        else if (k == "t") tick = std::stoul(v);
+        if (k == "c")
+          commits = std::stoi(v);
+        else if (k == "d")
+          dee = std::stod(v);
+        else if (k == "t")
+          tick = std::stoul(v);
       } catch (...) {
         return false;
       }
@@ -115,8 +123,10 @@ struct PredictEntry {
     if (tick > 0 && current_tick > tick) {
       TickCount delta = current_tick - tick;
       // 使用预计算衰减表，避免重复 exp() 计算
-      double decay_factor = DecayTable::instance().GetDecayFactor(static_cast<int>(delta));
-      double decayed = dee * decay_factor;  // da=0 时，公式简化为 d * exp((ta-t)/200)
+      double decay_factor =
+          DecayTable::instance().GetDecayFactor(static_cast<int>(delta));
+      double decayed =
+          dee * decay_factor;  // da=0 时，公式简化为 d * exp((ta-t)/200)
       dee = std::max(0.0, decayed);
     }
     tick = current_tick;
@@ -132,7 +142,8 @@ struct PredictEntry {
     if (tick > 0 && current_tick > tick) {
       // 先应用时间衰减
       delta = current_tick - tick;
-      decay_factor = DecayTable::instance().GetDecayFactor(static_cast<int>(delta));
+      decay_factor =
+          DecayTable::instance().GetDecayFactor(static_cast<int>(delta));
     }
 
     // ✅ 优化：固定增益 + 比例增益 + 新词保护
@@ -141,24 +152,23 @@ struct PredictEntry {
     // 3. 新词保护：前几次输入额外增益，快速进入前 100
     double fixed_gain = 5.0;  // 固定部分，新词受益
     double proportional_gain = static_cast<double>(commits) * weight_multiplier;
-    
+
     // 新词保护：commits < 500（约 5 次输入）的新词额外增益
     double new_entry_bonus = 0.0;
     if (commits < 500) {
       new_entry_bonus = (500.0 - commits) / 100.0;  // 最多额外 +5
     }
-    
+
     // 按照 librime formula_d: d + da * exp((ta-t)/200)
     double da = fixed_gain + proportional_gain + new_entry_bonus;
     dee = dee * decay_factor + da;
 
     commits = static_cast<int>(dee * 100);  // commits 作为排序依据
     tick = current_tick;
-    
-    DLOG(INFO) << "Boost: fixed=" << fixed_gain 
+
+    DLOG(INFO) << "Boost: fixed=" << fixed_gain
                << ", prop=" << proportional_gain
-               << ", bonus=" << new_entry_bonus
-               << ", total=" << da
+               << ", bonus=" << new_entry_bonus << ", total=" << da
                << ", new_commits=" << commits;
   }
 
@@ -171,7 +181,8 @@ struct PredictEntry {
 
     if (tick > 0 && current_tick > tick) {
       delta = current_tick - tick;
-      decay_factor = DecayTable::instance().GetDecayFactor(static_cast<int>(delta));
+      decay_factor =
+          DecayTable::instance().GetDecayFactor(static_cast<int>(delta));
     }
 
     // 按照 librime formula_d: d + 0.1 * exp((ta-t)/200)
@@ -185,10 +196,10 @@ struct PredictEntry {
 
 // 迁移统计信息
 struct MigrationStats {
-  int legacy_count = 0;       // 旧格式条目数
-  int new_count = 0;          // 新格式条目数
-  int mismatch_count = 0;     // 不匹配条目数
-  int sample_check_count = 0; // 抽样检查数量
+  int legacy_count = 0;        // 旧格式条目数
+  int new_count = 0;           // 新格式条目数
+  int mismatch_count = 0;      // 不匹配条目数
+  int sample_check_count = 0;  // 抽样检查数量
 };
 
 // ============================================================================
@@ -198,19 +209,19 @@ struct MigrationStats {
 class ActivityEstimator {
  public:
   explicit ActivityEstimator(double alpha = 0.2);
-  
+
   // 更新观测值（tick 差和小时数）
   void Update(TickCount tick_diff, double hours);
-  
+
   // 获取估算的每天输入次数
   int GetInputsPerDay() const { return static_cast<int>(ema_); }
-  
+
   // 重置（用于调试）
   void Reset(double initial = 500.0) { ema_ = initial; }
-  
+
  private:
-  double ema_ = 500.0;     // EMA 值，初始为默认值 500（中度用户）
-  double alpha_ = 0.2;     // 平滑系数（0.2 = 约最近 10 次观测的权重）
+  double ema_ = 500.0;  // EMA 值，初始为默认值 500（中度用户）
+  double alpha_ = 0.2;  // 平滑系数（0.2 = 约最近 10 次观测的权重）
 };
 
 // ============================================================================
@@ -256,30 +267,37 @@ class PredictDb : public UserDbWrapper<LevelDb> {
   bool CreateMetadata() override;
 
   // 业务方法
-  // max_candidates: 最大返回数量 (-1 表示不限制，默认不限制以确保新词有机会被看到)
+  // max_candidates: 最大返回数量 (-1
+  // 表示不限制，默认不限制以确保新词有机会被看到)
   // 注意：限制过小会导致新词即使增益提升也无法被用户看到和选择
   bool Lookup(const string& query, int max_candidates = -1);
   void Clear() { candidates_.clear(); }
 
   bool valid() const { return loaded(); }
   const vector<string>& candidates() const { return candidates_; }
-  void UpdatePredict(const string& key, const string& word, bool todelete = false);
+  void UpdatePredict(const string& key,
+                     const string& word,
+                     bool todelete = false);
 
   // 迁移状态查询
   bool IsMigrationComplete() const { return migration_complete_; }
-  void WaitForMigration(std::chrono::milliseconds timeout = std::chrono::seconds(5));
+  void WaitForMigration(
+      std::chrono::milliseconds timeout = std::chrono::seconds(5));
 
   // 旧词清理功能
   void SetCleanupConfig(const CleanupConfig& config);
   int CleanupStaleEntries();
-  int GetEstimatedInputsPerDay() const { return activity_estimator_.GetInputsPerDay(); }
+  int GetEstimatedInputsPerDay() const {
+    return activity_estimator_.GetInputsPerDay();
+  }
 
  private:
   // 迁移相关
   bool DetectLegacyFormat();
   void MigrateLegacyDataInBackground();
   MigrationStats VerifyMigration(
-      const std::vector<std::pair<string, std::vector<LegacyPrediction>>>& migration_data);
+      const std::vector<std::pair<string, std::vector<LegacyPrediction>>>&
+          migration_data);
   bool BackupLegacyDb(const path& backup_path);
   void RollbackToLegacyFormat();
 
@@ -330,7 +348,7 @@ class PredictEngine : public Class<PredictEngine, const Ticket&> {
   void UpdatePredict(const string& key, const string& word, bool todelete) {
     level_db_->UpdatePredict(key, word, todelete);
   }
-  
+
   // 清理配置
   void SetCleanupConfig(const CleanupConfig& config) {
     if (level_db_) {

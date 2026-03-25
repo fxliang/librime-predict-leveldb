@@ -20,7 +20,8 @@ namespace rime {
 
 namespace fs = std::filesystem;
 
-static const ResourceType kPredictDbPredictDbResourceType = {"level_predict_db", "", ""};
+static const ResourceType kPredictDbPredictDbResourceType = {"level_predict_db",
+                                                             "", ""};
 
 PredictDbManager& PredictDbManager::instance() {
   static PredictDbManager instance;
@@ -35,7 +36,8 @@ an<PredictDb> PredictDbManager::GetPredictDb(const path& file_path) {
       DLOG(INFO) << "Using cached PredictDb for: " << file_path;
       return db;
     } else {
-      DLOG(INFO) << "Cached PredictDb for " << file_path << " has expired, creating a new one.";
+      DLOG(INFO) << "Cached PredictDb for " << file_path
+                 << " has expired, creating a new one.";
       db_cache_.erase(found);
     }
   }
@@ -50,14 +52,18 @@ an<PredictDb> PredictDbManager::GetPredictDb(const path& file_path) {
   }
 }
 
-PredictEngine::PredictEngine(an<PredictDb> level_db, int max_iterations, int max_candidates)
-    : level_db_(level_db), max_iterations_(max_iterations), max_candidates_(max_candidates) {}
+PredictEngine::PredictEngine(an<PredictDb> level_db,
+                             int max_iterations,
+                             int max_candidates)
+    : level_db_(level_db),
+      max_iterations_(max_iterations),
+      max_candidates_(max_candidates) {}
 
 PredictEngine::~PredictEngine() {}
 
 bool PredictEngine::Predict(Context* ctx, const string& context_query) {
-  DLOG(INFO) << "PredictEngine::Predict ctx=" << ctx
-            << ", context_query='" << context_query << "'";
+  DLOG(INFO) << "PredictEngine::Predict ctx=" << ctx << ", context_query='"
+             << context_query << "'";
   if (!level_db_) {
     LOG(WARNING) << "PredictEngine::Predict level_db_ is null";
     return false;
@@ -66,10 +72,11 @@ bool PredictEngine::Predict(Context* ctx, const string& context_query) {
     query_ = context_query;
     candidates_ = level_db_->candidates();
     DLOG(INFO) << "PredictEngine::Predict found " << candidates_.size()
-              << " candidates for '" << context_query << "'";
+               << " candidates for '" << context_query << "'";
     return true;
   } else {
-    DLOG(INFO) << "PredictEngine::Predict no candidates for '" << context_query << "'";
+    DLOG(INFO) << "PredictEngine::Predict no candidates for '" << context_query
+               << "'";
     Clear();
     return false;
   }
@@ -135,21 +142,22 @@ PredictEngine* PredictEngineComponent::Create(const Ticket& ticket) {
 
   if (level_db && level_db->valid()) {
     auto* engine = new PredictEngine(level_db, max_iterations, max_candidates);
-    
+
     // 读取并设置清理配置
     CleanupConfig cleanup_config;
     if (auto* schema = ticket.schema) {
       auto* config = schema->config();
       config->GetBool("predictor/cleanup/enabled", &cleanup_config.enabled);
-      config->GetInt("predictor/cleanup/expire_days", &cleanup_config.expire_days);
+      config->GetInt("predictor/cleanup/expire_days",
+                     &cleanup_config.expire_days);
       config->GetInt("predictor/cleanup/min_usage", &cleanup_config.min_usage);
-      
+
       DLOG(INFO) << "cleanup config: enabled=" << cleanup_config.enabled
                  << ", expire_days=" << cleanup_config.expire_days
                  << ", min_usage=" << cleanup_config.min_usage;
     }
     engine->SetCleanupConfig(cleanup_config);
-    
+
     return engine;
   } else {
     LOG(ERROR) << "failed to load predict db: " << level_db_name;
@@ -189,8 +197,10 @@ PredictDb::PredictDb(const path& file_path)
 
   // 检查是否有回退标记（之前迁移失败）
   string rollback_flag;
-  if (MetaFetch("/migration_rollback", &rollback_flag) && rollback_flag == "true") {
-    DLOG(INFO) << "Migration rollback flag detected, continuing with legacy msgpack format.";
+  if (MetaFetch("/migration_rollback", &rollback_flag) &&
+      rollback_flag == "true") {
+    DLOG(INFO) << "Migration rollback flag detected, continuing with legacy "
+                  "msgpack format.";
     migration_rollback_ = true;
     migration_complete_ = true;
     return;
@@ -198,13 +208,13 @@ PredictDb::PredictDb(const path& file_path)
 
   // 检测并启动后台迁移
   if (DetectLegacyFormat()) {
-    DLOG(INFO) << "Detected legacy msgpack format, starting background migration...";
+    DLOG(INFO)
+        << "Detected legacy msgpack format, starting background migration...";
     migration_in_progress_ = true;
 
     // 启动后台迁移线程
-    migration_thread_ = std::thread([this]() {
-      MigrateLegacyDataInBackground();
-    });
+    migration_thread_ =
+        std::thread([this]() { MigrateLegacyDataInBackground(); });
   } else {
     // 无需迁移，直接创建元数据
     string db_type;
@@ -226,17 +236,15 @@ PredictDb::~PredictDb() {
       migration_thread_.join();
     }
   }
-  
+
   // 触发旧词清理
   if (cleanup_config_.enabled && loaded()) {
     int cleaned = CleanupStaleEntries();
-    LOG(INFO) << "PredictDb cleanup: " << cleaned 
-              << " stale entries removed";
-    LOG(INFO) << "Estimated user activity: " 
-              << activity_estimator_.GetInputsPerDay() 
-              << " inputs/day";
+    LOG(INFO) << "PredictDb cleanup: " << cleaned << " stale entries removed";
+    LOG(INFO) << "Estimated user activity: "
+              << activity_estimator_.GetInputsPerDay() << " inputs/day";
   }
-  
+
   // 等待清理完成
   while (cleanup_in_progress_.load()) {
     std::this_thread::sleep_for(std::chrono::milliseconds(10));
@@ -255,7 +263,8 @@ void PredictDb::WaitForMigration(std::chrono::milliseconds timeout) {
     return;
   }
   std::unique_lock<std::mutex> lock(migration_mutex_);
-  migration_cv_.wait_for(lock, timeout, [this] { return migration_complete_.load(); });
+  migration_cv_.wait_for(lock, timeout,
+                         [this] { return migration_complete_.load(); });
 }
 
 // ============================================================================
@@ -267,7 +276,7 @@ bool PredictDb::IsValidPredictPrefix(const string& prefix) {
   if (prefix.empty()) {
     return false;
   }
-  
+
   // 检查是否全是标点符号（没有字母、数字、汉字）
   bool has_alnum_or_cjk = false;
   for (unsigned char c : prefix) {
@@ -282,7 +291,7 @@ bool PredictDb::IsValidPredictPrefix(const string& prefix) {
       break;
     }
   }
-  
+
   return has_alnum_or_cjk;
 }
 
@@ -302,15 +311,17 @@ bool PredictDb::DetectLegacyFormat() {
           }
           if (key.find('\t') != string::npos) {
             // 找到新格式数据，确认不需要迁移
-            DLOG(INFO) << "Database has db_type=userdb with new format data, no migration needed.";
+            DLOG(INFO) << "Database has db_type=userdb with new format data, "
+                          "no migration needed.";
             return false;
           }
         }
       }
       // db_type=userdb 但没有新格式数据，可能是残留的旧数据库
-      DLOG(INFO) << "Database has db_type=userdb but no new format data, checking for legacy data.";
+      DLOG(INFO) << "Database has db_type=userdb but no new format data, "
+                    "checking for legacy data.";
     }
-    
+
     auto accessor = QueryAll();
     if (accessor) {
       string key, value;
@@ -328,23 +339,27 @@ bool PredictDb::DetectLegacyFormat() {
             msgpack::unpack(unpacked, value.data(), value.size());
             std::vector<LegacyPrediction> test;
             unpacked.get().convert(test);
-            DLOG(INFO) << "Detected legacy msgpack format (with db_type metadata), will migrate.";
+            DLOG(INFO) << "Detected legacy msgpack format (with db_type "
+                          "metadata), will migrate.";
             return true;
           } catch (...) {
             // 不是 msgpack，可能是新格式
-            DLOG(INFO) << "Database has db_type=" << db_type << ", first data key='" << key
-                      << "' is not legacy msgpack, assuming new format.";
+            DLOG(INFO) << "Database has db_type=" << db_type
+                       << ", first data key='" << key
+                       << "' is not legacy msgpack, assuming new format.";
             return false;
           }
         } else {
           // key 有制表符，是新格式
-          DLOG(INFO) << "Database has db_type=" << db_type << ", first data key='" << key
-                    << "' has tab, assuming new format.";
+          DLOG(INFO) << "Database has db_type=" << db_type
+                     << ", first data key='" << key
+                     << "' has tab, assuming new format.";
           return false;
         }
       }
       // 没有数据记录
-      DLOG(INFO) << "Database has db_type=" << db_type << " but no data records.";
+      DLOG(INFO) << "Database has db_type=" << db_type
+                 << " but no data records.";
       return false;
     }
     return false;
@@ -364,10 +379,12 @@ bool PredictDb::DetectLegacyFormat() {
         msgpack::unpack(unpacked, value.data(), value.size());
         std::vector<LegacyPrediction> test;
         unpacked.get().convert(test);
-        DLOG(INFO) << "Detected legacy msgpack format (no db_type metadata), will migrate.";
+        DLOG(INFO) << "Detected legacy msgpack format (no db_type metadata), "
+                      "will migrate.";
         return true;
       } catch (...) {
-        DLOG(INFO) << "First data key='" << key << "' is not legacy msgpack, assuming new format.";
+        DLOG(INFO) << "First data key='" << key
+                   << "' is not legacy msgpack, assuming new format.";
         return false;
       }
     }
@@ -409,11 +426,13 @@ void PredictDb::MigrateLegacyDataInBackground() {
       unpacked.get().convert(predictions);
       migration_data.emplace_back(key, predictions);
     } catch (const std::exception& e) {
-      LOG(WARNING) << "Failed to migrate key: " << key << ", error: " << e.what();
+      LOG(WARNING) << "Failed to migrate key: " << key
+                   << ", error: " << e.what();
     }
   }
 
-  DLOG(INFO) << "Migration data loaded: " << migration_data.size() << " legacy keys.";
+  DLOG(INFO) << "Migration data loaded: " << migration_data.size()
+             << " legacy keys.";
 
   // ========================================================================
   // 第二阶段：写入新格式数据（⚠️ 此时不删除旧数据，以便失败时回退）
@@ -449,7 +468,7 @@ void PredictDb::MigrateLegacyDataInBackground() {
       } else {
         skipped++;
       }
-      
+
       // ✅ 优化：每 1000 条 yield 一次（而不是每 100 条）
       if (batch_count >= kBatchSize) {
         std::this_thread::yield();
@@ -459,7 +478,8 @@ void PredictDb::MigrateLegacyDataInBackground() {
   }
 
   if (skipped > 0) {
-    DLOG(INFO) << "Migration skipped " << skipped << " entries (already migrated).";
+    DLOG(INFO) << "Migration skipped " << skipped
+               << " entries (already migrated).";
   }
   DLOG(INFO) << "New format entries written: " << count;
 
@@ -479,7 +499,8 @@ void PredictDb::MigrateLegacyDataInBackground() {
                << ", mismatch_count=" << stats.mismatch_count;
 
     // ✅ 回退：删除新写入的数据，保留旧数据
-    DLOG(INFO) << "Rolling back: removing " << count << " new format entries...";
+    DLOG(INFO) << "Rolling back: removing " << count
+               << " new format entries...";
     int removed = 0;
     for (const auto& [prefix, predictions] : migration_data) {
       for (const auto& pred : predictions) {
@@ -496,7 +517,8 @@ void PredictDb::MigrateLegacyDataInBackground() {
     migration_complete_ = true;
     migration_cv_.notify_all();
 
-    LOG(WARNING) << "Migration rolled back, continuing with legacy msgpack format.";
+    LOG(WARNING)
+        << "Migration rolled back, continuing with legacy msgpack format.";
     LOG(WARNING) << "Please report this issue to the developer.";
     return;
   }
@@ -536,10 +558,10 @@ void PredictDb::MigrateLegacyDataInBackground() {
   }
   migration_cv_.notify_all();
 
-  DLOG(INFO) << "Migration completed: "
-            << count << " entries, "
-            << "verification=" << (verification_passed ? "PASSED" : "FAILED") << ", "
-            << "backup=" << (backup_success ? "SUCCESS" : "SKIPPED");
+  DLOG(INFO) << "Migration completed: " << count << " entries, "
+             << "verification=" << (verification_passed ? "PASSED" : "FAILED")
+             << ", "
+             << "backup=" << (backup_success ? "SUCCESS" : "SKIPPED");
 }
 
 void PredictDb::RollbackToLegacyFormat() {
@@ -549,11 +571,13 @@ void PredictDb::RollbackToLegacyFormat() {
   migration_complete_ = true;
   migration_cv_.notify_all();
   MetaUpdate("/migration_rollback", "true");
-  LOG(WARNING) << "Migration rolled back, continuing with legacy msgpack format.";
+  LOG(WARNING)
+      << "Migration rolled back, continuing with legacy msgpack format.";
 }
 
 MigrationStats PredictDb::VerifyMigration(
-    const std::vector<std::pair<string, std::vector<LegacyPrediction>>>& migration_data) {
+    const std::vector<std::pair<string, std::vector<LegacyPrediction>>>&
+        migration_data) {
   DLOG(INFO) << "Starting migration verification...";
   MigrationStats stats;
 
@@ -562,23 +586,25 @@ MigrationStats PredictDb::VerifyMigration(
     for (const auto& pred : predictions) {
       string new_key = prefix + "\t" + pred.word;
       string new_value;
-      
+
       if (!Fetch(new_key, &new_value)) {
         LOG(WARNING) << "Missing migrated key: " << new_key;
         stats.mismatch_count++;
         continue;
       }
-      
+
       stats.new_count++;
-      
+
       // 验证 value 格式
       if (stats.sample_check_count < 1000) {
         PredictEntry entry;
         if (!entry.Unpack(new_value)) {
-          LOG(WARNING) << "Invalid value format: " << new_value << " (key=" << new_key << ")";
+          LOG(WARNING) << "Invalid value format: " << new_value
+                       << " (key=" << new_key << ")";
           stats.mismatch_count++;
         } else if (entry.commits < 0) {
-          LOG(WARNING) << "Invalid commits value: " << entry.commits << " (key=" << new_key << ")";
+          LOG(WARNING) << "Invalid commits value: " << entry.commits
+                       << " (key=" << new_key << ")";
           stats.mismatch_count++;
         }
         stats.sample_check_count++;
@@ -587,9 +613,9 @@ MigrationStats PredictDb::VerifyMigration(
   }
 
   DLOG(INFO) << "Migration verification completed: "
-            << "new=" << stats.new_count
-            << ", mismatch=" << stats.mismatch_count
-            << ", sample_checks=" << stats.sample_check_count;
+             << "new=" << stats.new_count
+             << ", mismatch=" << stats.mismatch_count
+             << ", sample_checks=" << stats.sample_check_count;
 
   return stats;
 }
@@ -640,14 +666,15 @@ bool PredictDb::Lookup(const string& query, int max_candidates) {
           DLOG(INFO) << "Lookup: prefix mismatch, stopping scan";
           break;
         }
-        
+
         // ✅ 优化：限制返回数量（可选，默认不限制以避免遗漏低频词）
         // 注意：设置过小会导致低频词永远无法被看到和选择
-        if (max_candidates > 0 && static_cast<int>(entries.size()) >= max_candidates) {
+        if (max_candidates > 0 &&
+            static_cast<int>(entries.size()) >= max_candidates) {
           DLOG(INFO) << "Lookup: reached max_candidates=" << max_candidates;
           break;
         }
-        
+
         matched++;
 
         // 从 key 中提取 word (prefix\tword 格式)
@@ -664,7 +691,8 @@ bool PredictDb::Lookup(const string& query, int max_candidates) {
         }
       }
 
-      DLOG(INFO) << "Lookup: matched=" << matched << ", entries=" << entries.size();
+      DLOG(INFO) << "Lookup: matched=" << matched
+                 << ", entries=" << entries.size();
 
       // 按词频排序
       std::sort(entries.begin(), entries.end(),
@@ -702,7 +730,8 @@ bool PredictDb::Lookup(const string& query, int max_candidates) {
 
   // 新格式：前缀查询
   string prefix = query + "\t";
-  DLOG(INFO) << "Lookup: prefix='" << prefix << "', current_tick=" << current_tick;
+  DLOG(INFO) << "Lookup: prefix='" << prefix
+             << "', current_tick=" << current_tick;
 
   auto accessor = QueryAll();
   if (!accessor) {
@@ -729,14 +758,15 @@ bool PredictDb::Lookup(const string& query, int max_candidates) {
       DLOG(INFO) << "Lookup: prefix mismatch, stopping scan";
       break;
     }
-    
+
     // ✅ 优化：限制返回数量（可选，默认不限制以避免遗漏低频词）
     // 注意：设置过小会导致低频词永远无法被看到和选择
-    if (max_candidates > 0 && static_cast<int>(entries.size()) >= max_candidates) {
+    if (max_candidates > 0 &&
+        static_cast<int>(entries.size()) >= max_candidates) {
       DLOG(INFO) << "Lookup: reached max_candidates=" << max_candidates;
       break;
     }
-    
+
     matched++;
 
     // 从 key 中提取 word
@@ -753,8 +783,8 @@ bool PredictDb::Lookup(const string& query, int max_candidates) {
       // 应用遗忘曲线衰减
       entry.ApplyDecay(current_tick);
       DLOG(INFO) << "Lookup: matched entry w='" << entry.w
-                 << "', dee=" << entry.dee
-                 << ", commits=" << entry.commits << " (after decay)";
+                 << "', dee=" << entry.dee << ", commits=" << entry.commits
+                 << " (after decay)";
       entries.push_back(entry);
     }
   }
@@ -781,7 +811,9 @@ bool PredictDb::Lookup(const string& query, int max_candidates) {
 // UpdatePredict: 写入单个预测词（支持遗忘曲线）
 // ============================================================================
 
-void PredictDb::UpdatePredict(const string& key, const string& word, bool todelete) {
+void PredictDb::UpdatePredict(const string& key,
+                              const string& word,
+                              bool todelete) {
   // 回退模式：只写旧格式
   if (migration_rollback_) {
     // 读取旧数据
@@ -810,8 +842,9 @@ void PredictDb::UpdatePredict(const string& key, const string& word, bool todele
     bool found = false;
     if (todelete) {
       legacy_entries.erase(
-          std::remove_if(legacy_entries.begin(), legacy_entries.end(),
-                         [&](const LegacyPrediction& e) { return e.word == word; }),
+          std::remove_if(
+              legacy_entries.begin(), legacy_entries.end(),
+              [&](const LegacyPrediction& e) { return e.word == word; }),
           legacy_entries.end());
       found = true;
     } else {
@@ -869,7 +902,7 @@ void PredictDb::UpdatePredict(const string& key, const string& word, bool todele
   // ✅ 优化 2: 只在需要时读取现有数据
   PredictEntry entry;
   string existing_value;
-  
+
   if (Fetch(new_key, &existing_value)) {
     // 现有条目：更新
     entry.Unpack(existing_value);
@@ -892,18 +925,19 @@ void PredictDb::UpdatePredict(const string& key, const string& word, bool todele
 
   // 更新全局 tick
   MetaUpdate("/tick", std::to_string(current_tick));
-  
+
   // 记录输入样本用于 EMA 活跃度估算（仅非删除操作）
   if (!todelete && loaded()) {
     time_t current_time = std::time(nullptr);
-    
+
     // 有历史记录时才更新 EMA
     if (last_recorded_tick_ > 0 && last_recorded_time_ > 0) {
       TickCount tick_diff = current_tick - last_recorded_tick_;
-      double hours = static_cast<double>(current_time - last_recorded_time_) / 3600.0;
+      double hours =
+          static_cast<double>(current_time - last_recorded_time_) / 3600.0;
       activity_estimator_.Update(tick_diff, hours);
     }
-    
+
     // 更新历史记录
     last_recorded_tick_ = current_tick;
     last_recorded_time_ = current_time;
@@ -928,24 +962,24 @@ void ActivityEstimator::Update(TickCount tick_diff, double hours) {
     DLOG(INFO) << "ActivityEstimator: skipped (hours=" << hours << ")";
     return;
   }
-  
+
   if (tick_diff <= 0) {
     return;
   }
-  
+
   // 计算当前观测值（次/天）
   // 示例：tick_diff=100, hours=2 → current = 100 / (2/24) = 1200 次/天
-  double current_inputs_per_day = static_cast<double>(tick_diff) / (hours / 24.0);
-  
+  double current_inputs_per_day =
+      static_cast<double>(tick_diff) / (hours / 24.0);
+
   // 限制合理范围（避免极端值影响）
   current_inputs_per_day = std::clamp(current_inputs_per_day, 50.0, 5000.0);
-  
+
   // EMA 更新公式：ema = α × current + (1 - α) × ema
   ema_ = alpha_ * current_inputs_per_day + (1.0 - alpha_) * ema_;
-  
+
   DLOG(INFO) << "ActivityEstimator::Update: "
-             << "tick_diff=" << tick_diff
-             << ", hours=" << hours
+             << "tick_diff=" << tick_diff << ", hours=" << hours
              << ", current=" << static_cast<int>(current_inputs_per_day)
              << ", ema=" << static_cast<int>(ema_);
 }
@@ -965,9 +999,9 @@ int PredictDb::CleanupStaleEntries() {
   if (!cleanup_config_.enabled || !loaded()) {
     return 0;
   }
-  
+
   cleanup_in_progress_ = true;
-  
+
   // 获取当前 tick
   TickCount current_tick = 0;
   string tick_str;
@@ -978,94 +1012,93 @@ int PredictDb::CleanupStaleEntries() {
       current_tick = 0;
     }
   }
-  
+
   // 获取 EMA 估算的活跃度
   int inputs_per_day = activity_estimator_.GetInputsPerDay();
-  
+
   // 计算清理阈值
   // expire_tick = expire_days × inputs_per_day
   // 示例：7 天 × 500 次/天 = 3500 tick
   int expire_tick = cleanup_config_.expire_days * inputs_per_day;
-  
+
   // min_commits = min_usage × 100
   // 示例：5 次 × 100 = 500 commits
   int min_commits = cleanup_config_.min_usage * 100;
-  
+
   DLOG(INFO) << "CleanupStaleEntries: "
              << "current_tick=" << current_tick
              << ", inputs_per_day=" << inputs_per_day
              << ", expire_tick=" << expire_tick
              << ", min_commits=" << min_commits;
-  
+
   int cleaned_count = 0;
   int scanned_count = 0;
-  
+
   auto accessor = QueryAll();
   if (!accessor) {
     LOG(ERROR) << "CleanupStaleEntries: QueryAll failed";
     cleanup_in_progress_ = false;
     return 0;
   }
-  
+
   // 批量删除（每 100 条提交一次，避免阻塞）
   constexpr int kBatchSize = 100;
   std::vector<std::string> keys_to_delete;
-  
+
   string key, value;
   while (accessor->GetNextRecord(&key, &value)) {
     scanned_count++;
-    
+
     // 跳过元数据
     if (!key.empty() && key[0] == '\x01') {
       continue;
     }
-    
+
     // 解析条目
     PredictEntry entry;
     if (!entry.Unpack(value)) {
       DLOG(INFO) << "CleanupStaleEntries: failed to unpack key='" << key << "'";
       continue;
     }
-    
+
     // 计算时间差（tick 差）
     TickCount delta = current_tick - entry.tick;
-    
+
     // 判断是否过期
     // 条件 1: 超过 expire_tick 未使用
     // 条件 2: 使用次数 < min_usage
     if (delta > expire_tick && entry.commits < min_commits) {
       keys_to_delete.push_back(key);
       cleaned_count++;
-      
+
       DLOG(INFO) << "CleanupStaleEntries: marking for deletion: "
                  << "key='" << key << "', "
-                 << "delta=" << delta
-                 << " (≈" << delta / inputs_per_day << "天), "
-                 << "commits=" << entry.commits
-                 << " (≈" << entry.commits / 100 << "次)";
+                 << "delta=" << delta << " (≈" << delta / inputs_per_day
+                 << "天), "
+                 << "commits=" << entry.commits << " (≈" << entry.commits / 100
+                 << "次)";
     }
-    
+
     // 批量提交删除
     if (static_cast<int>(keys_to_delete.size()) >= kBatchSize) {
       for (const auto& k : keys_to_delete) {
         Erase(k);
       }
       keys_to_delete.clear();
-      
+
       // yield，避免阻塞
       std::this_thread::yield();
     }
   }
-  
+
   // 删除剩余条目
   for (const auto& k : keys_to_delete) {
     Erase(k);
   }
-  
+
   DLOG(INFO) << "CleanupStaleEntries: completed, "
-             << "scanned=" << scanned_count
-             << ", cleaned=" << cleaned_count;
-  
+             << "scanned=" << scanned_count << ", cleaned=" << cleaned_count;
+
   cleanup_in_progress_ = false;
   return cleaned_count;
 }
