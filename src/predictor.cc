@@ -35,6 +35,7 @@ void Predictor::OnAbort(Context* ctx) {
   }
   predict_engine_->Clear();
   iteration_counter_ = 0;
+  has_last_timed_commit_ = false;  // 清除时间戳记录
   if (ctx->IsComposing()) {
     self_updating_ = true;
     ctx->Clear();
@@ -58,6 +59,7 @@ ProcessResult Predictor::ProcessKeyEvent(const KeyEvent& key_event) {
     last_action_ = kDelete;
     predict_engine_->Clear();
     iteration_counter_ = 0;
+    has_last_timed_commit_ = false;  // 清除时间戳记录
     auto* ctx = engine_->context();
     if (!ctx->composition().empty() &&
         ctx->composition().back().HasTag("prediction")) {
@@ -109,13 +111,47 @@ void Predictor::OnContextUpdate(Context* ctx) {
       last_commit.type == "thru") {
     predict_engine_->Clear();
     iteration_counter_ = 0;
+    // 清除时间戳记录
+    has_last_timed_commit_ = false;
     return;
   }
-  if (ctx->commit_history().size() >= 2) {
-    auto pre_last_commit = *std::prev(ctx->commit_history().end(), 2);
-    predict_engine_->UpdatePredict(pre_last_commit.text, last_commit.text,
+  
+  // 获取当前时间戳
+  auto current_time = std::chrono::steady_clock::now();
+  
+  // 检查时间间隔：如果有上一次提交记录，判断时间间隔
+  bool should_update_relation = false;
+  if (has_last_timed_commit_) {
+    // max_commit_interval_seconds_ <= 0 表示不限制时间间隔
+    if (max_commit_interval_seconds_ <= 0) {
+      should_update_relation = true;
+    } else {
+      auto duration = std::chrono::duration_cast<std::chrono::seconds>(
+          current_time - last_timed_commit_.timestamp);
+      if (duration.count() <= max_commit_interval_seconds_) {
+        // 时间间隔在阈值内，认为两次提交相关
+        should_update_relation = true;
+      } else {
+        // 时间间隔过长，不建立关联，但更新最后一次提交记录
+        LOG(INFO) << "[Predict] Commit interval too long (" 
+                  << duration.count() << "s), skipping relation update";
+      }
+    }
+  } else {
+    // 第一次提交，无法建立关联，但记录当前提交
+    LOG(INFO) << "[Predict] First commit, recording for future relation";
+  }
+  
+  // 只有时间间隔合理时才更新提交之间的关系
+  if (should_update_relation) {
+    predict_engine_->UpdatePredict(last_timed_commit_.text, last_commit.text,
                                    false);
   }
+  
+  // 更新最后一次提交记录（无论是否建立关联）
+  last_timed_commit_ = {last_commit.text, last_commit.type, current_time};
+  has_last_timed_commit_ = true;
+  
   if (last_commit.type == "prediction") {
     int max_iterations = predict_engine_->max_iterations();
     iteration_counter_++;
@@ -151,7 +187,20 @@ PredictorComponent::PredictorComponent(
 PredictorComponent::~PredictorComponent() {}
 
 Predictor* PredictorComponent::Create(const Ticket& ticket) {
-  return new Predictor(ticket, engine_factory_->GetInstance(ticket));
+  int max_commit_interval_seconds = 30;  // 默认 30 秒
+  if (auto* schema = ticket.schema) {
+    auto* config = schema->config();
+    if (!config->GetInt("predictor/max_commit_interval_seconds",
+                        &max_commit_interval_seconds)) {
+      DLOG(INFO) << "predictor/max_commit_interval_seconds not set, using default (30s)";
+    } else {
+      DLOG(INFO) << "predictor/max_commit_interval_seconds: "
+                 << max_commit_interval_seconds << "s";
+    }
+  }
+  Predictor* predictor = new Predictor(ticket, engine_factory_->GetInstance(ticket));
+  predictor->SetMaxCommitIntervalSeconds(max_commit_interval_seconds);
+  return predictor;
 }
 
 }  // namespace rime
