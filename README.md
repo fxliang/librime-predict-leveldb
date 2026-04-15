@@ -51,3 +51,26 @@ predictor:
   db: predict.db
 ```
 * Deploy and enjoy.
+
+## Data conversion tool
+
+Build target `predict_data_tool` currently supports conversion between leveldb
+(`predict.userdb`) and txt.
+
+```bash
+# leveldb -> txt
+./build/plugins/librime-predict-leveldb/predict_data_tool \
+  --from leveldb --to txt --input ./predict.userdb --output ./predict.txt
+
+# txt -> leveldb
+./build/plugins/librime-predict-leveldb/predict_data_tool \
+  --from txt --to leveldb --input ./predict.txt --output ./predict.userdb
+```
+
+txt format (tab-separated):
+
+```text
+prefix<TAB>word<TAB>weight
+# or
+prefix<TAB>word<TAB>weight<TAB>commits<TAB>dee<TAB>tick
+```
