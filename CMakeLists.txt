@@ -17,7 +17,7 @@ if(BUILD_SHARED_LIBS)
 endif()
 
 add_executable(predict_data_tool src/predict_data_tool.cc)
-target_link_libraries(predict_data_tool PRIVATE ${rime_library} leveldb)
+target_link_libraries(predict_data_tool PRIVATE ${rime_library} ${LevelDb_LIBRARY})
 
 set(plugin_name rime-predict PARENT_SCOPE)
 set(plugin_objs $<TARGET_OBJECTS:rime-predict-objs> PARENT_SCOPE)
