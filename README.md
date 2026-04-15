@@ -57,7 +57,15 @@ predictor:
 Build target `predict_data_tool` currently supports conversion between leveldb
 (`predict.userdb`) and txt.
 
+Python version is also provided at `scripts/predict_data_tool.py` (requires
+`plyvel`).
+
 ```bash
+# python tool (recommended for quick use)
+pip install plyvel
+python3 scripts/predict_data_tool.py \
+  --from leveldb --to txt --input ./predict.userdb --output ./predict.txt
+
 # leveldb -> txt
 ./build/plugins/librime-predict-leveldb/predict_data_tool \
   --from leveldb --to txt --input ./predict.userdb --output ./predict.txt
