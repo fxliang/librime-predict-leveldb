@@ -41,5 +41,13 @@ predictor:
   # 设为 0 或负值可禁用时间限制（恢复旧版行为，始终关联所有提交）
   # 建议范围：10-120 秒，根据实际使用习惯调整
   max_commit_interval_seconds: 30
+  # 兼容模式：启用后按 librime-predict 的方式预测候选
+  # - 不做 leveldb 扩展的提交关系学习与删除更新
+  # - 仅按最近提交词进行预测
+  # - 数据源切换为用户目录下的 predictor/db（默认 predict.db）
+  # 默认值：false（使用 librime-predict-leveldb 现有逻辑）
+  legacy_mode: false
+  # legacy_mode=true 时生效，默认 predict.db
+  db: predict.db
 ```
 * Deploy and enjoy.

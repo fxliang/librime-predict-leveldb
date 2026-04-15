@@ -37,6 +37,7 @@ class Predictor : public Processor {
   void SetMaxCommitIntervalSeconds(int seconds) {
     max_commit_interval_seconds_ = seconds;
   }
+  void SetLegacyMode(bool legacy_mode) { legacy_mode_ = legacy_mode; }
 
  protected:
   void OnContextUpdate(Context* ctx);
@@ -62,11 +63,12 @@ class Predictor : public Processor {
 
   // 用于判断提交时间相关性的成员
   TimedCommitRecord last_timed_commit_;  // 上一次带时间戳的提交记录
-  bool has_last_timed_commit_ = false;   // 是否有有效的上一次提交记录
-  
+  bool has_last_timed_commit_ = false;  // 是否有有效的上一次提交记录
+
   // 最大时间间隔阈值（秒），超过此时间的提交认为不相关
   // <= 0 表示不限制时间间隔（恢复旧版行为）
   int max_commit_interval_seconds_ = 30;  // 默认 30 秒，设为 0 可禁用
+  bool legacy_mode_ = false;
 
   an<PredictEngine> predict_engine_;
   connection select_connection_;

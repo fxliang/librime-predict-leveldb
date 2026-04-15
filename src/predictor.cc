@@ -77,6 +77,9 @@ void Predictor::OnSelect(Context* ctx) {
 }
 
 void Predictor::OnDelete(Context* ctx) {
+  if (legacy_mode_) {
+    return;
+  }
   if (!predict_engine_ || !ctx || !ctx->get_option("prediction")) {
     return;
   }
@@ -115,10 +118,29 @@ void Predictor::OnContextUpdate(Context* ctx) {
     has_last_timed_commit_ = false;
     return;
   }
-  
+
+  if (legacy_mode_) {
+    if (last_commit.type == "prediction") {
+      int max_iterations = predict_engine_->max_iterations();
+      iteration_counter_++;
+      if (max_iterations > 0 && iteration_counter_ >= max_iterations) {
+        predict_engine_->Clear();
+        iteration_counter_ = 0;
+        auto* active_ctx = engine_->context();
+        if (active_ctx && !active_ctx->composition().empty() &&
+            active_ctx->composition().back().HasTag("prediction")) {
+          active_ctx->Clear();
+        }
+        return;
+      }
+    }
+    PredictAndUpdate(ctx, last_commit.text);
+    return;
+  }
+
   // 获取当前时间戳
   auto current_time = std::chrono::steady_clock::now();
-  
+
   // 检查时间间隔：如果有上一次提交记录，判断时间间隔
   bool should_update_relation = false;
   if (has_last_timed_commit_) {
@@ -133,25 +155,25 @@ void Predictor::OnContextUpdate(Context* ctx) {
         should_update_relation = true;
       } else {
         // 时间间隔过长，不建立关联，但更新最后一次提交记录
-        LOG(INFO) << "[Predict] Commit interval too long (" 
-                  << duration.count() << "s), skipping relation update";
+        LOG(INFO) << "[Predict] Commit interval too long (" << duration.count()
+                  << "s), skipping relation update";
       }
     }
   } else {
     // 第一次提交，无法建立关联，但记录当前提交
     LOG(INFO) << "[Predict] First commit, recording for future relation";
   }
-  
+
   // 只有时间间隔合理时才更新提交之间的关系
   if (should_update_relation) {
     predict_engine_->UpdatePredict(last_timed_commit_.text, last_commit.text,
                                    false);
   }
-  
+
   // 更新最后一次提交记录（无论是否建立关联）
   last_timed_commit_ = {last_commit.text, last_commit.type, current_time};
   has_last_timed_commit_ = true;
-  
+
   if (last_commit.type == "prediction") {
     int max_iterations = predict_engine_->max_iterations();
     iteration_counter_++;
@@ -188,18 +210,28 @@ PredictorComponent::~PredictorComponent() {}
 
 Predictor* PredictorComponent::Create(const Ticket& ticket) {
   int max_commit_interval_seconds = 30;  // 默认 30 秒
+  bool legacy_mode = false;
   if (auto* schema = ticket.schema) {
     auto* config = schema->config();
     if (!config->GetInt("predictor/max_commit_interval_seconds",
                         &max_commit_interval_seconds)) {
-      DLOG(INFO) << "predictor/max_commit_interval_seconds not set, using default (30s)";
+      DLOG(INFO) << "predictor/max_commit_interval_seconds not set, using "
+                    "default (30s)";
     } else {
       DLOG(INFO) << "predictor/max_commit_interval_seconds: "
                  << max_commit_interval_seconds << "s";
     }
+    if (!config->GetBool("predictor/legacy_mode", &legacy_mode)) {
+      DLOG(INFO) << "predictor/legacy_mode not set, using default (false)";
+    } else {
+      DLOG(INFO) << "predictor/legacy_mode: "
+                 << (legacy_mode ? "true" : "false");
+    }
   }
-  Predictor* predictor = new Predictor(ticket, engine_factory_->GetInstance(ticket));
+  Predictor* predictor =
+      new Predictor(ticket, engine_factory_->GetInstance(ticket));
   predictor->SetMaxCommitIntervalSeconds(max_commit_interval_seconds);
+  predictor->SetLegacyMode(legacy_mode);
   return predictor;
 }
 

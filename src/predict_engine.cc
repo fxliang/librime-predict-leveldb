@@ -22,6 +22,7 @@ namespace fs = std::filesystem;
 
 static const ResourceType kPredictDbPredictDbResourceType = {"level_predict_db",
                                                              "", ""};
+static const ResourceType kLegacyPredictDbResourceType = {"predict_db", "", ""};
 
 PredictDbManager& PredictDbManager::instance() {
   static PredictDbManager instance;
@@ -53,9 +54,13 @@ an<PredictDb> PredictDbManager::GetPredictDb(const path& file_path) {
 }
 
 PredictEngine::PredictEngine(an<PredictDb> level_db,
+                             an<LegacyPredictDb> legacy_db,
+                             bool legacy_mode,
                              int max_iterations,
                              int max_candidates)
-    : level_db_(level_db),
+    : legacy_mode_(legacy_mode),
+      level_db_(level_db),
+      legacy_db_(legacy_db),
       max_iterations_(max_iterations),
       max_candidates_(max_candidates) {}
 
@@ -64,6 +69,23 @@ PredictEngine::~PredictEngine() {}
 bool PredictEngine::Predict(Context* ctx, const string& context_query) {
   DLOG(INFO) << "PredictEngine::Predict ctx=" << ctx << ", context_query='"
              << context_query << "'";
+  if (legacy_mode_) {
+    if (!legacy_db_) {
+      LOG(WARNING) << "PredictEngine::Predict legacy_db_ is null";
+      return false;
+    }
+    if (const auto* found = legacy_db_->Lookup(context_query)) {
+      query_ = context_query;
+      legacy_candidates_ = found;
+      DLOG(INFO) << "PredictEngine::Predict found " << legacy_candidates_->size
+                 << " legacy candidates for '" << context_query << "'";
+      return true;
+    }
+    DLOG(INFO) << "PredictEngine::Predict no legacy candidates for '"
+               << context_query << "'";
+    Clear();
+    return false;
+  }
   if (!level_db_) {
     LOG(WARNING) << "PredictEngine::Predict level_db_ is null";
     return false;
@@ -85,9 +107,10 @@ bool PredictEngine::Predict(Context* ctx, const string& context_query) {
 void PredictEngine::Clear() {
   DLOG(INFO) << "PredictEngine::Clear";
   query_.clear();
-  if (level_db_) {
+  if (!legacy_mode_ && level_db_) {
     level_db_->Clear();
   }
+  legacy_candidates_ = nullptr;
   vector<string>().swap(candidates_);
 }
 
@@ -120,12 +143,21 @@ PredictEngineComponent::~PredictEngineComponent() {}
 
 PredictEngine* PredictEngineComponent::Create(const Ticket& ticket) {
   string level_db_name = "predict.userdb";
+  string legacy_db_name = "predict.db";
+  bool legacy_mode = false;
   int max_candidates = 0;
   int max_iterations = 0;
   if (auto* schema = ticket.schema) {
     auto* config = schema->config();
+    if (config->GetBool("predictor/legacy_mode", &legacy_mode)) {
+      DLOG(INFO) << "predictor/legacy_mode: "
+                 << (legacy_mode ? "true" : "false");
+    }
     if (config->GetString("predictor/predictdb", &level_db_name)) {
       DLOG(INFO) << "custom predictor/predictdb" << level_db_name;
+    }
+    if (config->GetString("predictor/db", &legacy_db_name)) {
+      DLOG(INFO) << "custom predictor/db " << legacy_db_name;
     }
     if (!config->GetInt("predictor/max_candidates", &max_candidates)) {
       DLOG(INFO) << "predictor/max_candidates is not set in schema";
@@ -135,13 +167,28 @@ PredictEngine* PredictEngineComponent::Create(const Ticket& ticket) {
     }
   }
 
+  if (legacy_mode) {
+    the<ResourceResolver> resolver(Service::instance().CreateResourceResolver(
+        kLegacyPredictDbResourceType));
+    auto legacy_file_path = resolver->ResolvePath(legacy_db_name);
+    an<LegacyPredictDb> legacy_db =
+        std::make_shared<LegacyPredictDb>(legacy_file_path);
+    if (!legacy_db || !legacy_db->Load()) {
+      LOG(ERROR) << "failed to load legacy predict db: " << legacy_db_name;
+      return nullptr;
+    }
+    return new PredictEngine(nullptr, legacy_db, true, max_iterations,
+                             max_candidates);
+  }
+
   the<ResourceResolver> resolver(Service::instance().CreateResourceResolver(
       kPredictDbPredictDbResourceType));
   auto file_path = resolver->ResolvePath(level_db_name);
   an<PredictDb> level_db = PredictDbManager::instance().GetPredictDb(file_path);
 
   if (level_db && level_db->valid()) {
-    auto* engine = new PredictEngine(level_db, max_iterations, max_candidates);
+    auto* engine = new PredictEngine(level_db, nullptr, false, max_iterations,
+                                     max_candidates);
 
     // 读取并设置清理配置
     CleanupConfig cleanup_config;

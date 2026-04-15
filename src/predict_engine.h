@@ -1,6 +1,8 @@
 #ifndef RIME_PREDICT_ENGINE_H_
 #define RIME_PREDICT_ENGINE_H_
 
+#include "legacy_predict_db.h"
+
 #include <rime/component.h>
 #include <rime/dict/user_db.h>
 #include <rime/dict/level_db.h>
@@ -330,7 +332,11 @@ class PredictDb : public UserDbWrapper<LevelDb> {
 
 class PredictEngine : public Class<PredictEngine, const Ticket&> {
  public:
-  PredictEngine(an<PredictDb> level_db, int max_iterations, int max_candidates);
+  PredictEngine(an<PredictDb> level_db,
+                an<LegacyPredictDb> legacy_db,
+                bool legacy_mode,
+                int max_iterations,
+                int max_candidates);
   virtual ~PredictEngine();
 
   bool Predict(Context* ctx, const string& context_query);
@@ -341,27 +347,39 @@ class PredictEngine : public Class<PredictEngine, const Ticket&> {
   int max_iterations() const { return max_iterations_; }
   int max_candidates() const { return max_candidates_; }
   const string& query() const { return query_; }
-  int num_candidates() const { return candidates_.size(); }
-  string candidates(size_t i) {
+  int num_candidates() const {
+    return legacy_mode_ && legacy_candidates_ ? legacy_candidates_->size
+                                              : candidates_.size();
+  }
+  string candidates(size_t i) const {
+    if (legacy_mode_ && legacy_candidates_) {
+      return legacy_db_ ? legacy_db_->GetEntryText(legacy_candidates_->at[i])
+                        : string();
+    }
     return candidates_.size() ? candidates_.at(i) : string();
   }
   void UpdatePredict(const string& key, const string& word, bool todelete) {
-    level_db_->UpdatePredict(key, word, todelete);
+    if (!legacy_mode_ && level_db_) {
+      level_db_->UpdatePredict(key, word, todelete);
+    }
   }
 
   // 清理配置
   void SetCleanupConfig(const CleanupConfig& config) {
-    if (level_db_) {
+    if (!legacy_mode_ && level_db_) {
       level_db_->SetCleanupConfig(config);
     }
   }
 
  private:
+  bool legacy_mode_ = false;
   an<PredictDb> level_db_;
+  an<LegacyPredictDb> legacy_db_;
   int max_iterations_;  // prediction times limit
   int max_candidates_;  // prediction candidate count limit
   string query_;        // cache last query
   vector<string> candidates_;
+  const legacy_predict::Candidates* legacy_candidates_ = nullptr;
 };
 
 class PredictEngineComponent : public PredictEngine::Component {
