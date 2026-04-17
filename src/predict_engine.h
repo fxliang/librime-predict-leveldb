@@ -316,6 +316,8 @@ class PredictDb : public UserDbWrapper<LevelDb> {
   // 同步原语
   mutable std::mutex migration_mutex_;
   std::condition_variable migration_cv_;
+  // 序列化写入，防止同进程多个 session 并发写导致 tick/entry 丢失
+  mutable std::mutex write_mutex_;
 
   // 后台迁移线程
   std::thread migration_thread_;

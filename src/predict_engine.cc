@@ -861,6 +861,9 @@ bool PredictDb::Lookup(const string& query, int max_candidates) {
 void PredictDb::UpdatePredict(const string& key,
                               const string& word,
                               bool todelete) {
+  // 序列化写入以避免同进程并发问题
+  std::lock_guard<std::mutex> write_lock(write_mutex_);
+
   // 回退模式：只写旧格式
   if (migration_rollback_) {
     // 读取旧数据
